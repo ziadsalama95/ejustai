@@ -4,6 +4,12 @@
 
 E-JUST AI is a bilingual question-and-answer assistant for information about Egypt-Japan University of Science and Technology (E-JUST). It retrieves passages from a university knowledge base, generates streamed answers, and displays linked sources alongside responses. The application runs as a Cloudflare Worker with a static HTML, CSS, and JavaScript interface.
 
+## Screenshots
+
+![E-JUST AI homepage with suggested question categories and chat input](docs/screenshots/homepage.png)
+
+![E-JUST AI answering a CSIT question with expandable references and suggested follow-ups](docs/screenshots/chat-workflow.png)
+
 ## Capabilities
 
 - Ask questions about E-JUST programs, admissions, tuition, scholarships, research, and campus life in English or Arabic.
