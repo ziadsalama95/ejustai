@@ -15,6 +15,7 @@
 			"/history",
 			"/clear",
 			"/feedback",
+			"/profile",
 			"/title",
 			"/api/*"
 		]

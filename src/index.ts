@@ -8,7 +8,12 @@ import {
 } from './nvidia';
 import { buildSystemPrompt, dedupeSources, retrieveContext } from './rag';
 import { appendHistory, clearHistory, getHistory, saveFeedback } from './storage';
-import { logChatToTelegram, logErrorToTelegram, logFeedbackToTelegram } from './telegram';
+import {
+  logChatToTelegram,
+  logErrorToTelegram,
+  logFeedbackToTelegram,
+  logProfileToTelegram,
+} from './telegram';
 import type { AskRequest, AskResponse, Env, FeedbackRequest } from './types';
 
 const CORS_HEADERS: Record<string, string> = {
@@ -102,6 +107,26 @@ export default {
         return jsonResponse({ saved });
       }
 
+      if (route === '/profile' && request.method === 'POST') {
+        const body = (await request.json().catch(() => ({}))) as {
+          session_id?: string;
+          new_name?: string;
+          old_name?: string;
+        };
+        const newName = body.new_name?.trim().slice(0, 60) || '';
+        if (newName) {
+          scheduleBackground(
+            ctx,
+            logProfileToTelegram(env, {
+              sessionId: body.session_id?.trim() || 'unknown',
+              newName,
+              oldName: body.old_name?.trim().slice(0, 60) || undefined,
+            }),
+          );
+        }
+        return jsonResponse({ ok: true });
+      }
+
       if (route === '/title' && request.method === 'POST') {
         const body = (await request.json().catch(() => ({}))) as {
           messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
@@ -190,14 +215,8 @@ export default {
                     sessionId,
                     userName,
                     question,
-                    rewrittenQuery: searchQuery,
                     answer: fullAnswer,
-                    model: finalModel,
-                    lang,
-                    faculty,
-                    retrievalMode: mode,
                     sources,
-                    latencyMs: Date.now() - startedAt,
                   }),
                 ]);
                 if (ctx) ctx.waitUntil(postTasks);
@@ -208,8 +227,6 @@ export default {
                 const errTask = logErrorToTelegram(env, {
                   sessionId,
                   userName,
-                  route,
-                  method: request.method,
                   status: 502,
                   error: msg,
                   question,
@@ -244,14 +261,8 @@ export default {
             sessionId,
             userName,
             question,
-            rewrittenQuery: searchQuery,
             answer: content,
-            model,
-            lang,
-            faculty,
-            retrievalMode: mode,
             sources,
-            latencyMs: Date.now() - startedAt,
           }),
         );
 
@@ -281,8 +292,6 @@ export default {
         logErrorToTelegram(env, {
           sessionId: activeSessionId,
           userName: activeUserName,
-          route,
-          method: request.method,
           status,
           error: message,
           question: activeQuestion,

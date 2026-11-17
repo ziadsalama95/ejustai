@@ -1449,8 +1449,16 @@ function saveUserName(e) {
   e.preventDefault();
   const val = document.getElementById('nameInput').value.trim().slice(0, 50);
   if (!val) return;
+  const oldName = userName;
   userName = val;
   localStorage.setItem(USER_NAME_KEY, userName);
+  if (val !== oldName) {
+    fetch(`${API}/profile`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sid, new_name: val, old_name: oldName || undefined }),
+    }).catch(() => {});
+  }
   applyUserNameUI();
   document.getElementById('nameOverlay').classList.remove('open');
   if (live) {

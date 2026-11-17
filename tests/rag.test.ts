@@ -279,6 +279,34 @@ describe('Worker HTTP routes', () => {
     expect(tgBody.text).toContain('Fallback model answer');
   });
 
+  it('logs name changes with old and new name via POST /profile', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const env = createTestEnv({ TELEGRAM_BOT_TOKEN: '1:t', TELEGRAM_CHAT_ID: '-1' });
+    const pending: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil: (p: Promise<unknown>) => pending.push(p),
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext;
+
+    const res = await worker.fetch(
+      new Request('http://localhost/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: 's1', old_name: 'Sara', new_name: 'Mona' }),
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    await Promise.all(pending);
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string) as { text: string };
+    expect(body.text).toContain('Name Updated');
+    expect(body.text).toContain('Sara');
+    expect(body.text).toContain('Mona');
+  });
+
   it('generates a concise chat title via POST /title', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(

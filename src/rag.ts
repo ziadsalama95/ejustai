@@ -369,7 +369,7 @@ export function buildSystemPrompt(
 
   const langInstruction =
     lang === 'ar'
-      ? 'Respond in clear, natural Arabic (Egyptian or Modern Standard Arabic matching the user tone). Keep official English program names or course codes accurate.'
+      ? `Respond in natural, friendly Egyptian Arabic dialect (عامية مصرية), like a close friend chatting — not formal Modern Standard Arabic. Keep official English program names, course codes and acronyms in English. Grammatical gender when addressing the user: use MASCULINE forms by default (انت، عايز، تقدر). Switch to FEMININE forms (انتي، عايزة، تقدري) ONLY when the user's first name is clearly and unambiguously a female name. If there is any doubt, stay masculine. Your own speech as the assistant stays neutral/masculine.`
       : 'Respond in clear, concise English using well-structured Markdown (bullet points, tables when comparing items, bold key terms).';
 
   const suggestionHeader =

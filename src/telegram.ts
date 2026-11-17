@@ -1,25 +1,53 @@
-import type { Env, RetrievalMode, SourceRef } from './types';
+import type { Env, SourceRef } from './types';
 
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+type TelegramEnv = Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>;
+
+const ANSWER_LIMIT = 2400;
+const PROMPT_LIMIT = 800;
+
+function esc(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen - 1) + '…';
+function cut(text: string, max: number): string {
+  const clean = text.trim();
+  return clean.length <= max ? clean : clean.slice(0, max - 1).trimEnd() + '…';
 }
 
-function sanitizeTag(sessionId: string): string {
-  return sessionId.replace(/[^a-zA-Z0-9_]/g, '_');
+function safeUrl(url: string): string | null {
+  if (!/^https?:\/\//i.test(url)) return null;
+  try {
+    return esc(encodeURI(decodeURI(url))).replace(/"/g, '%22');
+  } catch {
+    return null;
+  }
 }
 
-async function sendTelegramMessage(
-  env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
-  htmlText: string,
-): Promise<void> {
+/** Converts the model's Markdown answer into Telegram-safe HTML with clickable [n] citations. */
+function formatAnswer(answer: string, sources: SourceRef[]): string {
+  const body = answer.replace(/\n?---\s*\n\*\*[^*\n]+\*\*[\s\S]*$/, '');
+  let html = esc(cut(body, ANSWER_LIMIT));
+
+  html = html
+    .replace(/^#{1,3}\s+(.+)$/gm, '<b>$1</b>')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '<b>$1</b>')
+    .replace(/^\s*[*\-+]\s+/gm, '• ')
+    .replace(/,\s*(?=\[\d+\])/g, ' ');
+
+  html = html.replace(/\[(\d+)\]/g, (match, n: string) => {
+    const src = sources[Number(n) - 1];
+    const href = src ? safeUrl(src.url) : null;
+    return href ? `<a href="${href}">[${n}]</a>` : match;
+  });
+
+  return html;
+}
+
+function userLabel(name?: string): string {
+  return name?.trim() ? esc(name.trim()) : 'Unknown';
+}
+
+async function send(env: TelegramEnv, html: string): Promise<void> {
   const token = env.TELEGRAM_BOT_TOKEN?.trim();
   const chatId = env.TELEGRAM_CHAT_ID?.trim();
   if (!token || !chatId) return;
@@ -30,97 +58,73 @@ async function sendTelegramMessage(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: htmlText.slice(0, 4090),
+        text: html,
         parse_mode: 'HTML',
         disable_web_page_preview: true,
       }),
       signal: AbortSignal.timeout(8_000),
     });
   } catch {
-    // Never let logging failures break user requests
+    // Logging must never affect the user experience
   }
 }
 
 export async function logChatToTelegram(
-  env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
-  params: {
+  env: TelegramEnv,
+  p: {
     sessionId: string;
     userName?: string;
     question: string;
-    rewrittenQuery?: string;
     answer: string;
-    model: string;
-    lang: string;
-    faculty?: string;
-    retrievalMode: RetrievalMode;
     sources: SourceRef[];
-    latencyMs: number;
   },
 ): Promise<void> {
-  const tag = `#s_${sanitizeTag(params.sessionId)}`;
-  const userLabel = params.userName ? escapeHtml(params.userName) : 'Anonymous';
-  const rewrittenLine =
-    params.rewrittenQuery && params.rewrittenQuery !== params.question
-      ? `\n🔎 <b>Rewritten Query:</b> <i>${escapeHtml(truncate(params.rewrittenQuery, 240))}</i>`
-      : '';
-
-  const sourcesList = params.sources.length
-    ? params.sources.map((s, i) => `${i + 1}. ${escapeHtml(truncate(s.title, 60))}`).join('\n')
-    : 'None';
-
-  const msg = [
-    `💬 <b>E-JUST AI — Chat Interaction</b>`,
-    `👤 <b>User:</b> <b>${userLabel}</b> | 🆔 <b>Session:</b> <code>${escapeHtml(params.sessionId)}</code> (${tag})`,
-    `⚙️ <b>Model:</b> <code>${escapeHtml(params.model)}</code> | <b>Mode:</b> <code>${escapeHtml(params.retrievalMode)}</code>`,
-    `🌐 <b>Lang:</b> ${escapeHtml(params.lang.toUpperCase())} | <b>Faculty:</b> ${escapeHtml(params.faculty || 'All')} | <b>Latency:</b> ${params.latencyMs}ms`,
-    ``,
-    `👤 <b>Prompt:</b>`,
-    `<pre>${escapeHtml(truncate(params.question, 900))}</pre>${rewrittenLine}`,
-    ``,
-    `🤖 <b>Response:</b>`,
-    `<pre>${escapeHtml(truncate(params.answer, 1800))}</pre>`,
-    ``,
-    `📚 <b>Sources (${params.sources.length}):</b>`,
-    sourcesList,
-  ].join('\n');
-
-  await sendTelegramMessage(env, msg);
+  await send(
+    env,
+    [
+      `💬 <b>New Conversation Turn</b>`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `👤 <b>${userLabel(p.userName)}</b>`,
+      `🆔 <code>${esc(p.sessionId)}</code>`,
+      ``,
+      `🗨 <b>Prompt</b>`,
+      `<blockquote>${esc(cut(p.question, PROMPT_LIMIT))}</blockquote>`,
+      `🤖 <b>Response</b>`,
+      `<blockquote>${formatAnswer(p.answer, p.sources)}</blockquote>`,
+    ].join('\n'),
+  );
 }
 
 export async function logErrorToTelegram(
-  env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
-  params: {
+  env: TelegramEnv,
+  p: {
     sessionId?: string;
     userName?: string;
-    route: string;
-    method: string;
     status: number;
     error: string;
     question?: string;
   },
 ): Promise<void> {
-  const sid = params.sessionId || 'unknown';
-  const tag = `#s_${sanitizeTag(sid)}`;
-  const userLabel = params.userName ? escapeHtml(params.userName) : 'Anonymous';
-  const promptBlock = params.question
-    ? `\n\n👤 <b>Prompt:</b>\n<pre>${escapeHtml(truncate(params.question, 800))}</pre>`
-    : '';
-
-  const msg = [
-    `🚨 <b>E-JUST AI — Error Alert</b>`,
-    `👤 <b>User:</b> <b>${userLabel}</b> | 🆔 <b>Session:</b> <code>${escapeHtml(sid)}</code> (${tag})`,
-    `📍 <b>Endpoint:</b> <code>${escapeHtml(params.method)} ${escapeHtml(params.route)}</code> | <b>Status:</b> <code>${params.status}</code>`,
+  const lines = [
+    `🚨 <b>Something Went Wrong</b>`,
+    `━━━━━━━━━━━━━━━━━━`,
+    `👤 <b>${userLabel(p.userName)}</b>`,
+    `🆔 <code>${esc(p.sessionId || 'unknown')}</code>`,
     ``,
-    `❌ <b>Error:</b>`,
-    `<pre>${escapeHtml(truncate(params.error, 1800))}</pre>${promptBlock}`,
-  ].join('\n');
-
-  await sendTelegramMessage(env, msg);
+  ];
+  if (p.question) {
+    lines.push(`🗨 <b>Prompt</b>`, `<blockquote>${esc(cut(p.question, PROMPT_LIMIT))}</blockquote>`);
+  }
+  lines.push(
+    `❌ <b>Error (${p.status})</b>`,
+    `<blockquote>${esc(cut(p.error, 900))}</blockquote>`,
+  );
+  await send(env, lines.join('\n'));
 }
 
 export async function logFeedbackToTelegram(
-  env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
-  params: {
+  env: TelegramEnv,
+  p: {
     sessionId: string;
     userName?: string;
     question: string;
@@ -128,21 +132,44 @@ export async function logFeedbackToTelegram(
     rating: number;
   },
 ): Promise<void> {
-  const icon = params.rating > 0 ? '👍' : '👎';
-  const tag = `#s_${sanitizeTag(params.sessionId)}`;
-  const userLabel = params.userName ? escapeHtml(params.userName) : 'Anonymous';
+  const positive = p.rating > 0;
+  await send(
+    env,
+    [
+      positive ? `👍 <b>Marked as Helpful</b>` : `↩️ <b>Helpful Mark Removed</b>`,
+      `━━━━━━━━━━━━━━━━━━`,
+      `👤 <b>${userLabel(p.userName)}</b>`,
+      `🆔 <code>${esc(p.sessionId)}</code>`,
+      ``,
+      `🗨 <b>Prompt</b>`,
+      `<blockquote>${esc(cut(p.question || 'N/A', 500))}</blockquote>`,
+      `🤖 <b>Response</b>`,
+      `<blockquote>${esc(cut(p.answer || 'N/A', 900))}</blockquote>`,
+    ].join('\n'),
+  );
+}
 
-  const msg = [
-    `${icon} <b>E-JUST AI — User Feedback</b>`,
-    `👤 <b>User:</b> <b>${userLabel}</b> | 🆔 <b>Session:</b> <code>${escapeHtml(params.sessionId)}</code> (${tag})`,
-    `⭐ <b>Rating:</b> ${params.rating > 0 ? 'Helpful (+1)' : 'Removed (0)'}`,
-    ``,
-    `👤 <b>Prompt:</b>`,
-    `<pre>${escapeHtml(truncate(params.question || 'N/A', 700))}</pre>`,
-    ``,
-    `🤖 <b>Response:</b>`,
-    `<pre>${escapeHtml(truncate(params.answer || 'N/A', 1200))}</pre>`,
-  ].join('\n');
+export async function logProfileToTelegram(
+  env: TelegramEnv,
+  p: { sessionId: string; newName: string; oldName?: string },
+): Promise<void> {
+  const changed = Boolean(p.oldName?.trim()) && p.oldName!.trim() !== p.newName.trim();
+  if (p.oldName?.trim() && !changed) return;
 
-  await sendTelegramMessage(env, msg);
+  const lines = changed
+    ? [
+        `✏️ <b>Name Updated</b>`,
+        `━━━━━━━━━━━━━━━━━━`,
+        `Previous: <b>${esc(p.oldName!.trim())}</b>`,
+        `Now: <b>${esc(p.newName.trim())}</b>`,
+        `🆔 <code>${esc(p.sessionId)}</code>`,
+      ]
+    : [
+        `🎉 <b>New User Joined</b>`,
+        `━━━━━━━━━━━━━━━━━━`,
+        `👤 <b>${esc(p.newName.trim())}</b>`,
+        `🆔 <code>${esc(p.sessionId)}</code>`,
+      ];
+
+  await send(env, lines.join('\n'));
 }
