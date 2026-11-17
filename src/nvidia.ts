@@ -176,12 +176,15 @@ export async function rewriteQuery(
   history: ChatMessage[],
   env: Pick<Env, 'NVIDIA_API_KEY' | 'NVIDIA_BASE_URL' | 'NVIDIA_CHAT_MODEL'>,
 ): Promise<string> {
-  if (history.length === 0 || !env.NVIDIA_API_KEY) return question;
+  const hasArabic = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(question);
+  if ((history.length === 0 && !hasArabic) || !env.NVIDIA_API_KEY) return question;
 
-  const recent = history
-    .slice(-4)
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 250)}`)
-    .join('\n');
+  const recent = history.length
+    ? `Conversation:\n${history
+        .slice(-4)
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 250)}`)
+        .join('\n')}\n\n`
+    : '';
 
   try {
     const res = await fetch(`${getBaseUrl(env)}/chat/completions`, {
@@ -196,18 +199,18 @@ export async function rewriteQuery(
           {
             role: 'system',
             content:
-              'Rewrite the user follow-up question into a single self-contained search query for E-JUST (Egypt-Japan University of Science and Technology). Preserve the original language (English or Arabic). Return ONLY the rewritten query, nothing else.',
+              'Translate and rewrite the user question into a single concise, self-contained English search query for E-JUST (Egypt-Japan University of Science and Technology) knowledge retrieval. Return ONLY the English search query, nothing else.',
           },
           {
             role: 'user',
-            content: `Conversation:\n${recent}\n\nFollow-up question: ${question}`,
+            content: `${recent}Question: ${question}`,
           },
         ],
         temperature: 0,
-        max_tokens: 90,
+        max_tokens: 100,
         stream: false,
       }),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(6_000),
     });
 
     if (!res.ok) return question;
