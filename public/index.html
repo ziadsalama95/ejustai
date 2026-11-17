@@ -283,6 +283,7 @@ header {
 .scroll {
   flex: 1;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
   padding: 28px 20px 20px;
@@ -562,7 +563,13 @@ header {
   transform: scale(1);
   border-width: 1px;
 }
-.bubble a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.bubble a {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 .bubble a:hover { color: var(--brand-hi); }
 .bubble code {
   font-family: var(--mono);
@@ -571,6 +578,8 @@ header {
   border-radius: 5px;
   background: var(--surface-2);
   border: 1px solid var(--border);
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 .bubble pre {
   margin: 10px 0;
@@ -745,6 +754,13 @@ header {
   flex-shrink: 0;
 }
 
+.msg-body.ar-body { align-items: flex-end; }
+.msg-body.ar-body .refs-wrap { align-items: flex-end; }
+.msg-body.ar-body .ref-item { direction: rtl; text-align: right; }
+.msg-body.ar-body .ref-item:hover { transform: translateX(-2px); }
+.msg-body.ar-body .msg-footer { flex-direction: row-reverse; }
+.suggestions.ar { margin-left: 0; margin-right: 44px; align-items: flex-end; direction: rtl; }
+
 /* Message Footer */
 .msg-footer {
   display: flex;
@@ -787,6 +803,27 @@ header {
   border-color: #a7f3d0;
 }
 
+.msg-body.ar-body {
+  align-items: flex-end;
+}
+
+.msg-body.ar-body .refs-wrap {
+  align-items: flex-end;
+}
+
+.msg-body.ar-body .ref-item {
+  direction: rtl;
+  text-align: right;
+}
+
+.msg-body.ar-body .ref-item:hover {
+  transform: translateX(-2px);
+}
+
+.msg-body.ar-body .msg-footer {
+  flex-direction: row-reverse;
+}
+
 /* Follow-ups */
 .suggestions {
   margin-left: 44px;
@@ -794,6 +831,17 @@ header {
   flex-direction: column;
   gap: 7px;
   animation: msgIn 0.25s var(--ease) both;
+}
+
+.suggestions.ar {
+  margin-left: 0;
+  margin-right: 44px;
+  align-items: flex-end;
+  direction: rtl;
+}
+
+.suggestions.ar .sug-list {
+  justify-content: flex-start;
 }
 
 .suggestions-hd {
@@ -1048,7 +1096,7 @@ header {
   .msg-body { max-width: 90%; }
   .msg.user .msg-body { max-width: 86%; }
   .bubble { padding: 11px 14px; font-size: 14.5px; }
-  .suggestions { margin-left: 0; }
+  .suggestions, .suggestions.ar { margin-left: 0; margin-right: 0; }
   .input-dock { padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
   .input-box { padding: 8px 8px 8px 14px; border-radius: 14px; }
   .ta { font-size: 16px; }
@@ -1079,11 +1127,12 @@ header {
   </div>
 
   <div class="hdr-right">
+    <button class="btn-new" id="btnLang" onclick="toggleUiLang()" aria-label="Switch language">العربية</button>
     <button class="btn-new" onclick="newChat()" aria-label="New chat">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 5v14M5 12h14"/>
       </svg>
-      <span>New chat</span>
+      <span id="newChatLabel">New chat</span>
     </button>
   </div>
 </header>
@@ -1092,7 +1141,7 @@ header {
   <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar(false)"></div>
   <aside class="sidebar" id="sidebar" aria-label="Chat history">
     <div class="sidebar-hd">
-      <span>Recent Chats</span>
+      <span id="recentChatsLabel">Recent Chats</span>
     </div>
     <div class="chat-list" id="chatList"></div>
   </aside>
@@ -1105,8 +1154,8 @@ header {
         <div class="welcome-logo">
           <img src="https://www.ejust.edu.eg/assets/img/mini.png" alt="E-JUST"/>
         </div>
-        <h1 class="welcome-h">How can I help you today?</h1>
-        <p class="welcome-sub">Your intelligent assistant for Egypt-Japan University of Science and Technology — programs, admissions, scholarships, and research.</p>
+        <h1 class="welcome-h" id="welcomeTitle">How can I help you today?</h1>
+        <p class="welcome-sub" id="welcomeSub">Your intelligent assistant for Egypt-Japan University of Science and Technology — programs, admissions, scholarships, and research.</p>
         <div class="prompt-grid" id="promptGrid"></div>
       </div>
 
@@ -1128,7 +1177,7 @@ header {
           <span class="send-spinner"></span>
         </button>
       </div>
-      <div class="disclaimer">E-JUST AI can make mistakes. Verify critical dates and fees on ejust.edu.eg.</div>
+      <div class="disclaimer" id="disclaimerText">E-JUST AI can make mistakes. Verify critical dates and fees on ejust.edu.eg.</div>
     </div>
   </div>
 </div>
@@ -1141,22 +1190,66 @@ header {
 </button>
 
 <script>
-const PROMPTS = [
-  { cat: 'Academics', text: 'What academic programs does E-JUST offer?' },
-  { cat: 'Admissions', text: 'What are the undergraduate admission requirements?' },
-  { cat: 'Financial Aid', text: 'Tell me about tuition fees and scholarships' },
-  { cat: 'Research', text: 'What research centers and labs are at E-JUST?' },
-  { cat: 'Campus Life', text: 'Where is E-JUST located and is housing available?' },
-  { cat: 'CSIT', text: 'Tell me about the Faculty of CSIT and AI programs' },
-];
+const UI_TEXT = {
+  en: {
+    langBtn: 'العربية',
+    newChat: 'New chat',
+    recentChats: 'Recent Chats',
+    noChats: 'No saved chats yet',
+    welcomeTitle: 'How can I help you today?',
+    welcomeSub: 'Your intelligent assistant for Egypt-Japan University of Science and Technology — programs, admissions, scholarships, and research.',
+    placeholder: 'Ask anything about E-JUST…',
+    disclaimer: 'E-JUST AI can make mistakes. Verify critical dates and fees on ejust.edu.eg.',
+    thinking: 'Thinking…',
+    refs: n => `References (${n})`,
+    copy: 'Copy',
+    copied: 'Copied',
+    helpful: 'Helpful',
+    followUp: 'Follow-up questions',
+    prompts: [
+      { cat: 'Academics', text: 'What academic programs does E-JUST offer?' },
+      { cat: 'Admissions', text: 'What are the undergraduate admission requirements?' },
+      { cat: 'Financial Aid', text: 'Tell me about tuition fees and scholarships' },
+      { cat: 'Research', text: 'What research centers and labs are at E-JUST?' },
+      { cat: 'Campus Life', text: 'Where is E-JUST located and is housing available?' },
+      { cat: 'CSIT', text: 'Tell me about the Faculty of CSIT and AI programs' },
+    ],
+  },
+  ar: {
+    langBtn: 'English',
+    newChat: 'محادثة جديدة',
+    recentChats: 'المحادثات السابقة',
+    noChats: 'لا توجد محادثات محفوظة بعد',
+    welcomeTitle: 'كيف يمكنني مساعدتك اليوم؟',
+    welcomeSub: 'مساعدك الذكي للجامعة المصرية اليابانية للعلوم والتكنولوجيا — البرامج الدراسية، شروط القبول، المنح، والأبحاث.',
+    placeholder: 'اسأل أي سؤال عن الجامعة المصرية اليابانية…',
+    disclaimer: 'قد يخطئ المساعد أحياناً. يُرجى مراجعة المواعيد والرسوم الرسمية على ejust.edu.eg.',
+    thinking: 'جاري البحث…',
+    refs: n => `المصادر (${n})`,
+    copy: 'نسخ',
+    copied: 'تم النسخ',
+    helpful: 'مفيد',
+    followUp: 'أسئلة مقترحة',
+    prompts: [
+      { cat: 'البرامج', text: 'ما هي البرامج والتخصصات المتاحة في E-JUST؟' },
+      { cat: 'القبول', text: 'ما هي شروط القبول لمرحلة البكالوريوس؟' },
+      { cat: 'المصاريف والمنح', text: 'كم تبلغ المصاريف الدراسية وما هي المنح المتاحة؟' },
+      { cat: 'البحث العلمي', text: 'ما هي المراكز البحثية والمعامل في الجامعة؟' },
+      { cat: 'الحرم الجامعي', text: 'أين تقع الجامعة وهل يتوفر سكن طلابي؟' },
+      { cat: 'علوم الحاسب', text: 'حدثني عن كلية علوم الحاسب وتكنولوجيا المعلومات' },
+    ],
+  },
+};
 
 const API = window.location.origin;
 const CHATS_KEY = 'ejust_chats_v1';
 const ACTIVE_SID_KEY = 'ejust_active_sid';
+const UI_LANG_KEY = 'ejust_ui_lang';
 
 let live = false;
 let busy = false;
-let respLang = 'en';
+let uiLang = localStorage.getItem(UI_LANG_KEY) || 'en';
+let respLang = uiLang;
 let chats = loadAllChats();
 let sid = localStorage.getItem(ACTIVE_SID_KEY) || createChatId();
 let sessionMsgs = getActiveChat()?.messages.slice() || [];
@@ -1209,6 +1302,29 @@ function upsertActiveChat(titleOverride) {
   renderSidebar();
 }
 
+function applyUiLang(lang) {
+  uiLang = lang === 'ar' ? 'ar' : 'en';
+  localStorage.setItem(UI_LANG_KEY, uiLang);
+  const t = UI_TEXT[uiLang];
+  document.documentElement.lang = uiLang;
+  document.getElementById('btnLang').textContent = t.langBtn;
+  document.getElementById('newChatLabel').textContent = t.newChat;
+  document.getElementById('recentChatsLabel').textContent = t.recentChats;
+  document.getElementById('welcomeTitle').textContent = t.welcomeTitle;
+  document.getElementById('welcomeSub').textContent = t.welcomeSub;
+  document.getElementById('disclaimerText').textContent = t.disclaimer;
+  ta.placeholder = t.placeholder;
+  const welcomeEl = document.getElementById('welcome');
+  welcomeEl.setAttribute('dir', uiLang === 'ar' ? 'rtl' : 'ltr');
+  welcomeEl.style.fontFamily = uiLang === 'ar' ? 'var(--font-ar)' : '';
+  renderPromptGrid();
+  renderSidebar();
+}
+
+function toggleUiLang() {
+  applyUiLang(uiLang === 'en' ? 'ar' : 'en');
+}
+
 function renderSidebar() {
   const list = document.getElementById('chatList');
   if (!list) return;
@@ -1216,13 +1332,15 @@ function renderSidebar() {
   const nonEmpty = chats.filter(c => c.messages && c.messages.length > 0);
   if (!nonEmpty.length) {
     const empty = mk('div', 'chat-empty');
-    empty.textContent = 'No saved chats yet';
+    empty.textContent = UI_TEXT[uiLang].noChats;
     list.appendChild(empty);
     return;
   }
   nonEmpty.forEach(c => {
     const item = mk('div', 'chat-item' + (c.id === sid ? ' active' : ''));
     const titleEl = mk('span', 'chat-item-title');
+    titleEl.setAttribute('dir', 'auto');
+    if (hasArabic(c.title || '')) titleEl.style.fontFamily = 'var(--font-ar)';
     titleEl.textContent = c.title || 'New Chat';
     titleEl.title = c.title || 'New Chat';
     const delBtn = mk('button', 'chat-item-del');
@@ -1331,14 +1449,20 @@ function toast(msg, type = 'info') {
 function renderPromptGrid() {
   const grid = document.getElementById('promptGrid');
   grid.innerHTML = '';
-  PROMPTS.forEach(({ cat, text }) => {
+  const isAr = uiLang === 'ar';
+  UI_TEXT[uiLang].prompts.forEach(({ cat, text }) => {
     const btn = mk('button', 'prompt-card');
+    if (isAr) {
+      btn.setAttribute('dir', 'rtl');
+      btn.style.textAlign = 'right';
+      btn.style.fontFamily = 'var(--font-ar)';
+    }
     btn.innerHTML = `
       <span class="prompt-card-meta">
         <span class="prompt-cat">${esc(cat)}</span>
         <span class="prompt-text">${esc(text)}</span>
       </span>
-      <svg class="prompt-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <svg class="prompt-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="${isAr ? 'transform:scaleX(-1)' : ''}">
         <polyline points="9 18 15 12 9 6"/>
       </svg>`;
     btn.onclick = () => {
@@ -1533,7 +1657,7 @@ function showTyping() {
   const av = mk('div', 'av');
   av.innerHTML = '<img src="https://www.ejust.edu.eg/assets/img/mini.png" alt="E-JUST"/>';
   const bub = mk('div', 'typing-bubble');
-  bub.innerHTML = `<div class="t-dots"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div><span class="t-label">Thinking…</span>`;
+  bub.innerHTML = `<div class="t-dots"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div><span class="t-label">${esc(UI_TEXT[respLang]?.thinking || UI_TEXT.en.thinking)}</span>`;
   row.appendChild(av); row.appendChild(bub);
   feed.appendChild(row);
   scrollEnd();
@@ -1598,12 +1722,15 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
     msg.appendChild(av);
   }
 
-  const body = mk('div', 'msg-body');
+  const isArContent = hasArabic(content) || bLang === 'ar';
+  const body = mk('div', 'msg-body' + (isAI && isArContent ? ' ar-body' : ''));
   const bub = mk('div', 'bubble');
-  if (hasArabic(content)) bub.classList.add('ar');
+  if (isArContent) bub.classList.add('ar');
   if (isAI && /don't have that information|معنديش المعلومة/i.test(content)) bub.classList.add('uncertain');
   bub.innerHTML = isAI ? mdRender(content) : esc(raw);
   body.appendChild(bub);
+
+  const t = UI_TEXT[isArContent ? 'ar' : 'en'];
 
   if (isAI && sources && sources.length) {
     const wrap = mk('div', 'refs-wrap');
@@ -1613,7 +1740,7 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
       </svg>
-      <span>References (${sources.length})</span>
+      <span>${esc(t.refs(sources.length))}</span>
       <svg class="refs-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="6 9 12 15 18 9"/>
       </svg>`;
@@ -1654,16 +1781,16 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
   if (isAI) {
     const actions = mk('div', 'ai-actions');
     const copyBtn = mk('button', 'act-btn');
-    copyBtn.textContent = 'Copy';
+    copyBtn.textContent = t.copy;
     copyBtn.onclick = () => {
       navigator.clipboard.writeText(content).then(() => {
         copyBtn.classList.add('active');
-        copyBtn.textContent = 'Copied';
-        setTimeout(() => { copyBtn.classList.remove('active'); copyBtn.textContent = 'Copy'; }, 2000);
+        copyBtn.textContent = t.copied;
+        setTimeout(() => { copyBtn.classList.remove('active'); copyBtn.textContent = t.copy; }, 2000);
       }).catch(() => {});
     };
     const thumbBtn = mk('button', 'act-btn');
-    thumbBtn.textContent = 'Helpful';
+    thumbBtn.textContent = t.helpful;
     thumbBtn.onclick = () => {
       const liked = thumbBtn.classList.toggle('active');
       fetch(`${API}/feedback`, {
@@ -1682,9 +1809,9 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
   feed.appendChild(msg);
 
   if (isAI && suggestions.length) {
-    const sw = mk('div', 'suggestions');
+    const sw = mk('div', 'suggestions' + (isArContent ? ' ar' : ''));
     const hd = mk('div', 'suggestions-hd');
-    hd.textContent = bLang === 'ar' ? 'ممكن كمان تسأل عن' : 'Follow-up questions';
+    hd.textContent = t.followUp;
     const list = mk('div', 'sug-list');
     suggestions.forEach(sq => {
       const p = mk('button', 'sug-pill' + (hasArabic(sq) ? ' ar-pill' : ''));
@@ -1827,8 +1954,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.innerWidth <= 768) {
     document.getElementById('sidebar').classList.add('collapsed');
   }
-  renderPromptGrid();
-  renderSidebar();
+  applyUiLang(uiLang);
   try {
     const r = await fetch(`${API}/health`, { signal: AbortSignal.timeout(6000) });
     if (!r.ok) throw new Error();
