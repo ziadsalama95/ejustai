@@ -224,4 +224,58 @@ describe('Worker HTTP routes', () => {
     );
     expect(fbRes.status).toBe(200);
   });
+
+  it('falls back to next active NVIDIA model on 410 Gone and logs to Telegram', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url.includes('api.telegram.org')) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      // First chat call returns 410 Gone; second succeeds with fallback model
+      const chatCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes('chat/completions'));
+      if (chatCalls.length === 1) {
+        return new Response(JSON.stringify({ status: 410, title: 'Gone' }), { status: 410 });
+      }
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Fallback model answer' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    const env = createTestEnv({
+      NVIDIA_API_KEY: 'nvapi-test-key',
+      NVIDIA_CHAT_MODEL: 'retired/old-model',
+      TELEGRAM_BOT_TOKEN: '123:test-token',
+      TELEGRAM_CHAT_ID: '-100123456',
+    });
+
+    const waitUntilPromises: Promise<unknown>[] = [];
+    const ctx = {
+      waitUntil: (p: Promise<unknown>) => waitUntilPromises.push(p),
+      passThroughOnException: () => {},
+    } as unknown as ExecutionContext;
+
+    const res = await worker.fetch(
+      new Request('http://localhost/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: 'What is E-JUST?', session_id: 'tg-sess-42' }),
+      }),
+      env,
+      ctx,
+    );
+
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { answer: string; model: string };
+    expect(data.answer).toBe('Fallback model answer');
+    expect(data.model).toBe('nvidia/nemotron-3.5-lightning-30b-a3b');
+
+    await Promise.all(waitUntilPromises);
+    const tgCall = fetchMock.mock.calls.find(([u]) => String(u).includes('api.telegram.org'));
+    expect(tgCall).toBeDefined();
+    const tgBody = JSON.parse((tgCall![1] as RequestInit).body as string) as { text: string };
+    expect(tgBody.text).toContain('tg-sess-42');
+    expect(tgBody.text).toContain('What is E-JUST?');
+    expect(tgBody.text).toContain('Fallback model answer');
+  });
 });

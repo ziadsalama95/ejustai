@@ -12,6 +12,10 @@ export interface Env {
   NVIDIA_RERANK_MODEL?: string;
   RAG_TOP_K?: string;
   RAG_MIN_SCORE?: string;
+
+  // Telegram logging
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 export interface KnowledgeChunk {

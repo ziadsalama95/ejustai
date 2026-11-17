@@ -1580,7 +1580,9 @@ async function sendMsg(q) {
     const contentType = r.headers.get('Content-Type') || '';
     if (!r.ok) {
       const errData = await r.json().catch(() => ({}));
-      throw new Error(errData.error || `Error ${r.status}`);
+      const err = new Error(errData.error || `Error ${r.status}`);
+      err.serverLogged = true;
+      throw err;
     }
 
     if (contentType.includes('text/event-stream') && r.body) {
@@ -1652,6 +1654,18 @@ async function sendMsg(q) {
     kill(tyEl);
     renderErrorBubble(q);
     toast(err.message || 'Request failed', 'err');
+    if (!err.serverLogged) {
+      fetch(`${API}/log-error`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sid,
+          error: err.message || 'Client network/timeout error',
+          question: q,
+          route: '/ask',
+        }),
+      }).catch(() => {});
+    }
   }
 
   busy = false;

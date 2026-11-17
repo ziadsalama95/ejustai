@@ -1,8 +1,12 @@
 import type { ChatMessage, Env, RetrievedChunk } from './types';
 
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-const DEFAULT_CHAT_MODEL = 'meta/llama-3.3-70b-instruct';
-const DEFAULT_EMBED_MODEL = 'nvidia/nv-embedqa-e5-v5';
+const DEFAULT_CHAT_MODEL = 'google/gemma-4-31b-it';
+const CHAT_FALLBACK_MODELS = [
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'google/gemma-3-12b-it',
+];
+const DEFAULT_EMBED_MODEL = 'snowflake/arctic-embed-l';
 const DEFAULT_RERANK_MODEL = 'nvidia/nv-rerankqa-mistral-4b-v3';
 
 export class NvidiaApiError extends Error {
@@ -196,49 +200,62 @@ export async function rewriteQuery(
   }
 }
 
+function getCandidateChatModels(env: Pick<Env, 'NVIDIA_CHAT_MODEL'>): string[] {
+  const primary = env.NVIDIA_CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL;
+  return Array.from(new Set([primary, ...CHAT_FALLBACK_MODELS]));
+}
+
 export async function generateChatCompletion(
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>,
   env: Pick<Env, 'NVIDIA_API_KEY' | 'NVIDIA_BASE_URL' | 'NVIDIA_CHAT_MODEL'>,
 ): Promise<{ content: string; model: string }> {
   const apiKey = requireApiKey(env);
-  const model = env.NVIDIA_CHAT_MODEL || DEFAULT_CHAT_MODEL;
   const baseUrl = getBaseUrl(env);
+  const candidates = getCandidateChatModels(env);
+  let lastErr: NvidiaApiError | null = null;
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.25,
-      top_p: 0.9,
-      max_tokens: 1024,
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(45_000),
-  });
+  for (const model of candidates) {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.25,
+        top_p: 0.9,
+        max_tokens: 1024,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = data.choices?.[0]?.message?.content?.trim();
+      if (content) return { content, model };
+      lastErr = new NvidiaApiError('Empty completion from NVIDIA Chat API', 502);
+      continue;
+    }
+
     const errBody = await res.text().catch(() => '');
-    throw new NvidiaApiError(
-      `NVIDIA Chat API error (${res.status}): ${errBody.slice(0, 240)}`,
+    lastErr = new NvidiaApiError(
+      `NVIDIA Chat API error (${res.status}) [${model}]: ${errBody.slice(0, 240)}`,
       res.status === 401 ? 502 : res.status,
     );
+
+    if (res.status === 401) throw lastErr;
+    // Retry next fallback model on 404/410 (retired), 429 (rate limit), or 5xx
+    if (![404, 410, 429, 500, 502, 503, 504].includes(res.status)) {
+      throw lastErr;
+    }
   }
 
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
-  const content = data.choices?.[0]?.message?.content?.trim();
-  if (!content) {
-    throw new NvidiaApiError('Empty completion from NVIDIA Chat API', 502);
-  }
-
-  return { content, model };
+  throw lastErr ?? new NvidiaApiError('All NVIDIA chat models failed', 502);
 }
 
 export async function streamChatCompletion(
@@ -246,32 +263,49 @@ export async function streamChatCompletion(
   env: Pick<Env, 'NVIDIA_API_KEY' | 'NVIDIA_BASE_URL' | 'NVIDIA_CHAT_MODEL'>,
 ): Promise<{ stream: ReadableStream<string>; model: string }> {
   const apiKey = requireApiKey(env);
-  const model = env.NVIDIA_CHAT_MODEL || DEFAULT_CHAT_MODEL;
   const baseUrl = getBaseUrl(env);
+  const candidates = getCandidateChatModels(env);
+  let res: Response | null = null;
+  let chosenModel = candidates[0];
+  let lastErr: NvidiaApiError | null = null;
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature: 0.25,
-      top_p: 0.9,
-      max_tokens: 1024,
-      stream: true,
-    }),
-    signal: AbortSignal.timeout(50_000),
-  });
+  for (const model of candidates) {
+    const attempt = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.25,
+        top_p: 0.9,
+        max_tokens: 1024,
+        stream: true,
+      }),
+      signal: AbortSignal.timeout(50_000),
+    });
 
-  if (!res.ok || !res.body) {
-    const errBody = await res.text().catch(() => '');
-    throw new NvidiaApiError(
-      `NVIDIA Chat Stream error (${res.status}): ${errBody.slice(0, 240)}`,
-      res.status === 401 ? 502 : res.status,
+    if (attempt.ok && attempt.body) {
+      res = attempt;
+      chosenModel = model;
+      break;
+    }
+
+    const errBody = await attempt.text().catch(() => '');
+    lastErr = new NvidiaApiError(
+      `NVIDIA Chat Stream error (${attempt.status}) [${model}]: ${errBody.slice(0, 240)}`,
+      attempt.status === 401 ? 502 : attempt.status,
     );
+    if (attempt.status === 401) throw lastErr;
+    if (![404, 410, 429, 500, 502, 503, 504].includes(attempt.status)) {
+      throw lastErr;
+    }
+  }
+
+  if (!res || !res.body) {
+    throw lastErr ?? new NvidiaApiError('All NVIDIA chat stream models failed', 502);
   }
 
   const reader = res.body.getReader();
@@ -315,7 +349,7 @@ export async function streamChatCompletion(
     },
   });
 
-  return { stream: tokenStream, model };
+  return { stream: tokenStream, model: chosenModel };
 }
 
 export function formatHistoryForModel(

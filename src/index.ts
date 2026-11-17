@@ -7,6 +7,7 @@ import {
 } from './nvidia';
 import { buildSystemPrompt, dedupeSources, retrieveContext } from './rag';
 import { appendHistory, clearHistory, getHistory, saveFeedback } from './storage';
+import { logChatToTelegram, logErrorToTelegram, logFeedbackToTelegram } from './telegram';
 import type { AskRequest, AskResponse, Env, FeedbackRequest } from './types';
 
 const CORS_HEADERS: Record<string, string> = {
@@ -36,6 +37,12 @@ function normalizePath(pathname: string): string {
   return pathname.startsWith('/api/') ? pathname.slice(4) : pathname;
 }
 
+function scheduleBackground(ctx: ExecutionContext | undefined, promise: Promise<unknown>): void {
+  if (ctx) {
+    ctx.waitUntil(promise);
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -44,6 +51,8 @@ export default {
 
     const url = new URL(request.url);
     const route = normalizePath(url.pathname);
+    let activeSessionId: string | undefined;
+    let activeQuestion: string | undefined;
 
     try {
       if (route === '/health' && request.method === 'GET') {
@@ -51,14 +60,17 @@ export default {
           status: 'ok',
           service: 'ejustai',
           provider: 'nvidia-nim',
-          chat_model: env.NVIDIA_CHAT_MODEL || 'meta/llama-3.3-70b-instruct',
-          embed_model: env.NVIDIA_EMBED_MODEL || 'nvidia/nv-embedqa-e5-v5',
+          chat_model: env.NVIDIA_CHAT_MODEL || 'google/gemma-4-31b-it',
+          embed_model: env.NVIDIA_EMBED_MODEL || 'snowflake/arctic-embed-l',
           rerank_model: env.NVIDIA_RERANK_MODEL || 'nvidia/nv-rerankqa-mistral-4b-v3',
           vectorize_bound: Boolean(env.VECTORIZE),
           d1_bound: Boolean(env.DB),
           kv_bound: Boolean(env.CHAT_HISTORY),
           api_key_configured: Boolean(
             env.NVIDIA_API_KEY && env.NVIDIA_API_KEY !== 'nvapi-your-free-nvidia-key-here',
+          ),
+          telegram_logging_configured: Boolean(
+            env.TELEGRAM_BOT_TOKEN?.trim() && env.TELEGRAM_CHAT_ID?.trim(),
           ),
         });
       }
@@ -78,17 +90,42 @@ export default {
 
       if (route === '/feedback' && request.method === 'POST') {
         const body = (await request.json().catch(() => ({}))) as FeedbackRequest;
-        const saved = await saveFeedback(
-          env,
-          body.session_id?.trim() || 'anonymous',
-          body.question?.trim() || '',
-          body.answer?.trim() || '',
-          typeof body.rating === 'number' ? body.rating : 1,
+        const sessionId = body.session_id?.trim() || 'anonymous';
+        const question = body.question?.trim() || '';
+        const answer = body.answer?.trim() || '';
+        const rating = typeof body.rating === 'number' ? body.rating : 1;
+
+        const saved = await saveFeedback(env, sessionId, question, answer, rating);
+        scheduleBackground(
+          ctx,
+          logFeedbackToTelegram(env, { sessionId, question, answer, rating }),
         );
         return jsonResponse({ saved });
       }
 
+      if (route === '/log-error' && request.method === 'POST') {
+        const body = (await request.json().catch(() => ({}))) as {
+          session_id?: string;
+          error?: string;
+          question?: string;
+          route?: string;
+        };
+        scheduleBackground(
+          ctx,
+          logErrorToTelegram(env, {
+            sessionId: body.session_id?.trim() || 'unknown',
+            route: body.route?.trim() || 'client-ui',
+            method: 'CLIENT',
+            status: 0,
+            error: body.error?.trim() || 'Unknown client error',
+            question: body.question?.trim(),
+          }),
+        );
+        return jsonResponse({ logged: true });
+      }
+
       if (route === '/ask' && request.method === 'POST') {
+        const startedAt = Date.now();
         const body = (await request.json().catch(() => ({}))) as AskRequest;
         const question = body.question?.trim() || '';
         const sessionId = body.session_id?.trim() || 'default';
@@ -96,6 +133,9 @@ export default {
         const wantsStream =
           body.stream === true ||
           (request.headers.get('Accept') || '').includes('text/event-stream');
+
+        activeSessionId = sessionId;
+        activeQuestion = question;
 
         if (!question) {
           return jsonResponse({ error: 'Question is required.' }, 400);
@@ -146,12 +186,37 @@ export default {
                 }
 
                 sendEvent({ done: true, answer: fullAnswer, sources, lang, model, retrieval_mode: mode });
-                const savePromise = appendHistory(env, sessionId, question, fullAnswer, sources);
-                if (ctx) ctx.waitUntil(savePromise);
-                else await savePromise;
+
+                const postTasks = Promise.all([
+                  appendHistory(env, sessionId, question, fullAnswer, sources),
+                  logChatToTelegram(env, {
+                    sessionId,
+                    question,
+                    rewrittenQuery: searchQuery,
+                    answer: fullAnswer,
+                    model,
+                    lang,
+                    faculty,
+                    retrievalMode: mode,
+                    sources,
+                    latencyMs: Date.now() - startedAt,
+                  }),
+                ]);
+                if (ctx) ctx.waitUntil(postTasks);
+                else await postTasks;
               } catch (err) {
                 const msg = err instanceof Error ? err.message : 'Stream error';
                 sendEvent({ error: msg });
+                const errTask = logErrorToTelegram(env, {
+                  sessionId,
+                  route,
+                  method: request.method,
+                  status: 502,
+                  error: msg,
+                  question,
+                });
+                if (ctx) ctx.waitUntil(errTask);
+                else await errTask;
               } finally {
                 controller.close();
               }
@@ -174,6 +239,22 @@ export default {
         const { content, model } = await generateChatCompletion(messages, env);
         await appendHistory(env, sessionId, question, content, sources);
 
+        scheduleBackground(
+          ctx,
+          logChatToTelegram(env, {
+            sessionId,
+            question,
+            rewrittenQuery: searchQuery,
+            answer: content,
+            model,
+            lang,
+            faculty,
+            retrievalMode: mode,
+            sources,
+            latencyMs: Date.now() - startedAt,
+          }),
+        );
+
         const response: AskResponse = {
           answer: content,
           sources,
@@ -192,11 +273,22 @@ export default {
 
       return jsonResponse({ error: 'Not found' }, 404);
     } catch (err) {
-      if (err instanceof NvidiaApiError) {
-        return jsonResponse({ error: err.message }, err.status);
-      }
+      const status = err instanceof NvidiaApiError ? err.status : 500;
       const message = err instanceof Error ? err.message : 'Internal server error';
-      return jsonResponse({ error: message }, 500);
+
+      scheduleBackground(
+        ctx,
+        logErrorToTelegram(env, {
+          sessionId: activeSessionId,
+          route,
+          method: request.method,
+          status,
+          error: message,
+          question: activeQuestion,
+        }),
+      );
+
+      return jsonResponse({ error: message }, status);
     }
   },
 };
