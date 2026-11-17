@@ -1,3 +1,7 @@
 # Copy this file to .dev.vars for local development (`npm run dev` / `npm run ingest`)
 # Get your free API key from https://build.nvidia.com
 NVIDIA_API_KEY=nvapi-your-free-nvidia-key-here
+
+# Optional: Telegram group logging (chat interactions, errors, feedback)
+# TELEGRAM_BOT_TOKEN=123456789:ABCdef...
+# TELEGRAM_CHAT_ID=-1001234567890

@@ -1,19 +1,42 @@
 # E-JUST AI Assistant (`ejustai`)
 
-A production-ready **Retrieval-Augmented Generation (RAG)** chatbot built for **Cloudflare Workers** (with Static Assets, Vectorize, and KV) and powered by **free NVIDIA NIM models**.
+A production **Hybrid Retrieval-Augmented Generation (RAG)** assistant for **Egypt-Japan University of Science and Technology (E-JUST)**, deployed 100% on the **Cloudflare Free Tier** (Workers, Static Assets, Vectorize, D1 FTS5) and powered by **free NVIDIA NIM models**.
 
 ---
 
-## What Was Missing in the Original Repository?
+## Architecture
 
-The original repository only contained a single static `index.html` file designed to connect to an external `ngrok-free.app` tunnel. To make this a complete, production-ready RAG application on Cloudflare, the following pieces were missing and have now been built:
+```text
+User (Web / Mobile)
+   │
+   ▼  SSE Streaming / REST
+Cloudflare Worker (src/index.ts) + Static Assets (public/index.html)
+   │
+   ├──► Query Rewriter (NVIDIA NIM) ──► Rewrites follow-up questions using chat history
+   │
+   ├──► Hybrid Retrieval (src/rag.ts)
+   │      ├── Cloudflare Vectorize (1024-dim semantic search via nvidia/embed-qa-4)
+   │      └── Cloudflare D1 FTS5  (BM25 lexical search for exact codes, names & acronyms)
+   │      └── Reciprocal Rank Fusion (RRF) merges both ranked lists
+   │
+   ├──► Grounded Generation (src/nvidia.ts)
+   │      └── Primary: nvidia/nemotron-3.5-bolt-e4b (with automatic multi-model fallback)
+   │
+   └──► Async Observability (ctx.waitUntil)
+          ├── Cloudflare D1 (chat history & user feedback)
+          └── Telegram Bot (session-grouped chat logs, errors & feedback)
+```
 
-1. **Backend API Server** — Replaced the missing Colab/ngrok server with a TypeScript **Cloudflare Worker** (`src/index.ts`) serving `/health`, `/ask`, `/history`, `/clear`, and static frontend assets from the same origin.
-2. **Free NVIDIA NIM Integration** (`src/nvidia.ts`) — Connects to NVIDIA's OpenAI-compatible API (`https://integrate.api.nvidia.com/v1`) using free models (`meta/llama-3.3-70b-instruct` for chat and `nvidia/nv-embedqa-e5-v5` for embeddings).
-3. **Knowledge Base & Ingestion Pipeline** (`knowledge/` + `scripts/ingest.ts`) — Added structured Markdown documents, a chunking pipeline, and an embedding/upload script for **Cloudflare Vectorize**.
-4. **Vector Retrieval + Graceful Fallback** (`src/rag.ts`) — Queries Cloudflare Vectorize in production and automatically falls back to local keyword scoring over `src/data/kb-chunks.json` during local development or when Vectorize is not yet populated.
-5. **Persistent Session History** (`src/storage.ts`) — Stores conversation history in **Cloudflare KV** (with an in-memory fallback for local dev).
-6. **Frontend Auto-Connection & Bug Fixes** (`public/index.html`) — Auto-connects to the built-in Cloudflare Worker API on load (no manual ngrok URL required) and fixes the missing `#footerHint` element bug.
+---
+
+## Key Features
+
+- **Hybrid RAG (Dense + Lexical):** Combines **Cloudflare Vectorize** semantic search with **Cloudflare D1 FTS5** full-text search via **Reciprocal Rank Fusion (RRF)**.
+- **Real E-JUST Knowledge Base:** Includes **170+ scraped E-JUST web pages** and **25+ parsed PDFs** (handbooks, admission policies, academic programs) in [`knowledge/`](knowledge/).
+- **Resilient Free NVIDIA NIM Models:** Uses `nvidia/nemotron-3.5-bolt-e4b` for fast streaming chat and `nvidia/embed-qa-4` for 1024-dim embeddings, with automatic failover across active NVIDIA models.
+- **Clean Light-Theme UI:** Mobile-first, responsive interface ([`public/index.html`](public/index.html)) with SSE token streaming, `[1]` source citations, Markdown tables/code blocks, follow-up suggestion pills, and bilingual English/Arabic support.
+- **Local Chat Sessions & Auto-Titling:** Saves conversations in `localStorage` with a collapsible **Recent Chats** sidebar and AI-generated titles (`POST /title`) after the 1st turn and every 5th turn.
+- **Telegram Observability:** Optional real-time logging of prompts, responses, errors, and feedback to a Telegram group tagged by `session_id`.
 
 ---
 
@@ -21,78 +44,86 @@ The original repository only contained a single static `index.html` file designe
 
 ```text
 ejustai/
-├── knowledge/          # Markdown knowledge base files (add your own .md/.txt here)
-├── public/index.html   # Bilingual (EN/AR) E-JUST AI Assistant frontend
-├── scripts/ingest.ts   # Chunks knowledge/ and embeds via NVIDIA NIM for Vectorize
+├── knowledge/                  # Curated + scraped E-JUST Markdown & PDF text
+├── migrations/0001_init.sql    # Single D1 schema (chunks, FTS5 triggers, messages, feedback)
+├── public/index.html           # Responsive Light-Theme chat UI
+├── scripts/
+│   ├── scrape_ejust.py         # E-JUST crawler + PyMuPDF PDF-to-Markdown extractor
+│   └── ingest.ts               # Contextual chunker + D1 & Vectorize uploader
 ├── src/
-│   ├── index.ts        # Cloudflare Worker router + static asset serving
-│   ├── nvidia.ts       # NVIDIA NIM chat & embeddings client
-│   ├── rag.ts          # Chunking, Vectorize retrieval, keyword fallback & prompts
-│   ├── storage.ts      # Cloudflare KV / in-memory chat history
-│   ├── types.ts        # TypeScript interfaces
-│   └── data/kb-chunks.json
-├── tests/rag.test.ts   # Vitest unit & Worker route tests
-└── wrangler.jsonc      # Cloudflare Workers configuration
+│   ├── index.ts                # Worker router, SSE streaming & error handling
+│   ├── nvidia.ts               # NVIDIA NIM chat, embeddings, rewrite & title client
+│   ├── rag.ts                  # Vectorize + D1 FTS5 hybrid search, RRF & prompts
+│   ├── storage.ts              # D1 / KV / in-memory session & feedback storage
+│   ├── telegram.ts             # Async Telegram group logger
+│   └── types.ts                # TypeScript interfaces
+├── tests/rag.test.ts           # Vitest unit & Worker integration tests
+├── EJUST_Cloud_Ingest.ipynb    # Zero-local Google Colab ingestion notebook
+└── wrangler.jsonc              # Cloudflare Workers configuration
 ```
 
 ---
 
-## Quick Start (Local Development)
+## Quick Start (Deploy Your Own Instance)
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+### 1. Prerequisites
+- [Node.js 20+](https://nodejs.org/)
+- A free [Cloudflare](https://dash.cloudflare.com/) account
+- A free [NVIDIA NIM API key](https://build.nvidia.com/) (`nvapi-...`)
 
-2. **Get a free NVIDIA API key:**
-   - Sign in at [build.nvidia.com](https://build.nvidia.com) and generate an API key (`nvapi-...`).
-   - Copy `.dev.vars.example` to `.dev.vars` and paste your key:
-     ```bash
-     cp .dev.vars.example .dev.vars
-     ```
+### 2. Install & Verify Locally
+```bash
+git clone https://github.com/ziadsalama95/ejustai.git
+cd ejustai
+npm install
+cp .dev.vars.example .dev.vars   # Add your NVIDIA_API_KEY
+npm run typecheck
+npm test
+npm run dev                      # Starts local server
+```
 
-3. **Run tests & typecheck:**
-   ```bash
-   npm run typecheck
-   npm test
-   ```
+### 3. Create Cloudflare Resources
+```bash
+npx wrangler login
+npx wrangler vectorize create ejustai-index --dimensions=1024 --metric=cosine
+npx wrangler d1 create ejustai-db
+```
+Update `database_id` in [`wrangler.jsonc`](wrangler.jsonc) with the ID printed by `wrangler d1 create`, then apply the single migration:
+```bash
+npx wrangler d1 migrations apply ejustai-db --remote
+```
 
-4. **Start local dev server:**
-   ```bash
-   npm run dev
-   ```
+### 4. Configure Secrets & Deploy
+```bash
+npx wrangler secret put NVIDIA_API_KEY
+
+# Optional: enable Telegram group logging
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
+
+npm run deploy
+```
+
+### 5. Populate D1 & Vectorize
+Upload the included `knowledge/` dataset (or re-scrape fresh data):
+```bash
+# Option A: Upload existing knowledge/ files from your machine
+npm run ingest:remote
+
+# Option B: Re-scrape live E-JUST pages & PDFs in Google Colab (zero local compute)
+# Open EJUST_Cloud_Ingest.ipynb in Google Colab and run Cells 1 → 4.
+```
 
 ---
 
-## Deploy to Cloudflare
+## Environment Variables & Secrets
 
-1. **Authenticate Wrangler:**
-   ```bash
-   npx wrangler login
-   ```
-
-2. **Create Vectorize index (1024 dims for `nvidia/nv-embedqa-e5-v5`):**
-   ```bash
-   npx wrangler vectorize create ejustai-index --dimensions=1024 --metric=cosine
-   ```
-
-3. **Create KV namespace for chat history:**
-   ```bash
-   npx wrangler kv namespace create CHAT_HISTORY
-   ```
-   Uncomment the `vectorize` and `kv_namespaces` blocks in `wrangler.jsonc` and paste your KV namespace `id`.
-
-4. **Set your NVIDIA API key as a Cloudflare secret:**
-   ```bash
-   npx wrangler secret put NVIDIA_API_KEY
-   ```
-
-5. **Embed & upload your knowledge base:**
-   ```bash
-   npm run ingest:remote
-   ```
-
-6. **Deploy:**
-   ```bash
-   npm run deploy
-   ```
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `NVIDIA_API_KEY` | Secret | Free API key from `build.nvidia.com` |
+| `NVIDIA_CHAT_MODEL` | Var | Primary chat model (default: `nvidia/nemotron-3.5-bolt-e4b`) |
+| `NVIDIA_EMBED_MODEL` | Var | 1024-dim embedding model (default: `nvidia/embed-qa-4`) |
+| `RAG_TOP_K` | Var | Number of retrieved chunks passed to the LLM (default: `5`) |
+| `RAG_MIN_SCORE` | Var | Minimum cosine similarity threshold (default: `0.22`) |
+| `TELEGRAM_BOT_TOKEN` | Secret *(optional)* | Telegram Bot token for chat/error/feedback logs |
+| `TELEGRAM_CHAT_ID` | Secret *(optional)* | Target Telegram group/channel ID |
