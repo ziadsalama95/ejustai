@@ -1,6 +1,7 @@
 import {
   formatHistoryForModel,
   generateChatCompletion,
+  generateChatTitle,
   NvidiaApiError,
   rewriteQuery,
   streamChatCompletion,
@@ -101,6 +102,15 @@ export default {
           logFeedbackToTelegram(env, { sessionId, question, answer, rating }),
         );
         return jsonResponse({ saved });
+      }
+
+      if (route === '/title' && request.method === 'POST') {
+        const body = (await request.json().catch(() => ({}))) as {
+          messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+        };
+        const msgs = Array.isArray(body.messages) ? body.messages : [];
+        const title = await generateChatTitle(msgs, env);
+        return jsonResponse({ title });
       }
 
       if (route === '/log-error' && request.method === 'POST') {

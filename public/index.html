@@ -165,9 +165,143 @@ header {
 
 .btn-new:active { transform: scale(0.97); }
 
+/* ─── App Shell & Sidebar ───────────────────────────────────── */
+.app-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+
+.sidebar {
+  width: 264px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  transition: width 0.22s var(--ease), transform 0.22s var(--ease), opacity 0.2s;
+  z-index: 30;
+}
+
+.sidebar.collapsed {
+  width: 0;
+  overflow: hidden;
+  border-right: none;
+  opacity: 0;
+}
+
+.sidebar-hd {
+  padding: 14px 14px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tx-3);
+}
+
+.chat-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chat-empty {
+  padding: 20px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--tx-3);
+}
+
+.chat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  color: var(--tx-2);
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.chat-item:hover {
+  background: var(--surface-2);
+  color: var(--tx);
+}
+
+.chat-item.active {
+  background: var(--brand-soft);
+  color: var(--brand-hi);
+  font-weight: 600;
+}
+
+.chat-item-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-item-del {
+  opacity: 0;
+  border: none;
+  background: transparent;
+  color: var(--tx-3);
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.chat-item:hover .chat-item-del { opacity: 1; }
+.chat-item-del:hover { color: var(--red); background: #fee2e2; }
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  z-index: 25;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--tx-2);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.18s var(--ease);
+}
+
+.btn-icon:hover {
+  background: var(--surface-2);
+  color: var(--tx);
+  border-color: var(--border-hi);
+}
+
 /* ─── Main Layout ────────────────────────────────────────────── */
 .main {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -748,8 +882,27 @@ header {
 .toast.err { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
 
 /* ─── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    top: 58px;
+    bottom: 0;
+    left: 0;
+    width: 270px;
+    box-shadow: var(--shadow-md);
+  }
+  .sidebar.collapsed {
+    transform: translateX(-105%);
+    width: 270px;
+    opacity: 1;
+  }
+  .sidebar-backdrop.show { display: block; }
+  .chat-item-del { opacity: 0.7; }
+}
+
 @media (max-width: 640px) {
   header { padding: 0 14px; height: 54px; }
+  .sidebar { top: 54px; }
   .status-badge { display: none; }
   .scroll { padding: 18px 12px 14px; }
   .welcome { padding: 20px 4px 10px; }
@@ -769,19 +922,26 @@ header {
 <div id="toasts"></div>
 
 <header>
-  <a class="brand" href="#">
-    <div class="brand-logo">
-      <img src="https://www.ejust.edu.eg/assets/img/mini.png" alt="E-JUST"/>
-    </div>
-    <span class="brand-title">E-JUST AI</span>
-  </a>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button class="btn-icon" onclick="toggleSidebar()" title="Toggle chat history" aria-label="Toggle chat history">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/>
+      </svg>
+    </button>
+    <a class="brand" href="#">
+      <div class="brand-logo">
+        <img src="https://www.ejust.edu.eg/assets/img/mini.png" alt="E-JUST"/>
+      </div>
+      <span class="brand-title">E-JUST AI</span>
+    </a>
+  </div>
 
   <div class="hdr-right">
     <div class="status-badge" id="statusBadge">
       <span class="status-dot"></span>
       <span id="statusLabel">Connecting</span>
     </div>
-    <button class="btn-new" onclick="clearChat()" aria-label="New chat">
+    <button class="btn-new" onclick="newChat()" aria-label="New chat">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 5v14M5 12h14"/>
       </svg>
@@ -790,7 +950,16 @@ header {
   </div>
 </header>
 
-<div class="main">
+<div class="app-shell">
+  <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar(false)"></div>
+  <aside class="sidebar" id="sidebar" aria-label="Chat history">
+    <div class="sidebar-hd">
+      <span>Recent Chats</span>
+    </div>
+    <div class="chat-list" id="chatList"></div>
+  </aside>
+
+  <div class="main">
   <div class="scroll" id="scroll">
     <div class="container" id="feed">
 
@@ -825,6 +994,7 @@ header {
     </div>
   </div>
 </div>
+</div>
 
 <button id="scrollBottomBtn" onclick="scrollEnd()" aria-label="Scroll to bottom">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -843,13 +1013,150 @@ const PROMPTS = [
 ];
 
 const API = window.location.origin;
+const CHATS_KEY = 'ejust_chats_v1';
+const ACTIVE_SID_KEY = 'ejust_active_sid';
+
 let live = false;
 let busy = false;
 let respLang = 'en';
-let sid = sessionStorage.getItem('ejust_sid') || ('u_' + Math.random().toString(36).slice(2, 11));
-sessionStorage.setItem('ejust_sid', sid);
-let sessionMsgs = [];
+let chats = loadAllChats();
+let sid = localStorage.getItem(ACTIVE_SID_KEY) || createChatId();
+let sessionMsgs = getActiveChat()?.messages.slice() || [];
 let lastSendTime = 0;
+
+function createChatId() {
+  return 'u_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+function loadAllChats() {
+  try {
+    const raw = localStorage.getItem(CHATS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistAllChats() {
+  try {
+    localStorage.setItem(CHATS_KEY, JSON.stringify(chats.slice(0, 40)));
+    localStorage.setItem(ACTIVE_SID_KEY, sid);
+  } catch {}
+}
+
+function getActiveChat() {
+  return chats.find(c => c.id === sid);
+}
+
+function upsertActiveChat(titleOverride) {
+  const now = Date.now();
+  let chat = getActiveChat();
+  if (!chat) {
+    chat = {
+      id: sid,
+      title: titleOverride || 'New Chat',
+      createdAt: now,
+      updatedAt: now,
+      messages: sessionMsgs.slice(),
+    };
+    chats.unshift(chat);
+  } else {
+    chat.messages = sessionMsgs.slice();
+    chat.updatedAt = now;
+    if (titleOverride) chat.title = titleOverride;
+    chats = [chat, ...chats.filter(c => c.id !== sid)];
+  }
+  persistAllChats();
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const list = document.getElementById('chatList');
+  if (!list) return;
+  list.innerHTML = '';
+  const nonEmpty = chats.filter(c => c.messages && c.messages.length > 0);
+  if (!nonEmpty.length) {
+    const empty = mk('div', 'chat-empty');
+    empty.textContent = 'No saved chats yet';
+    list.appendChild(empty);
+    return;
+  }
+  nonEmpty.forEach(c => {
+    const item = mk('div', 'chat-item' + (c.id === sid ? ' active' : ''));
+    const titleEl = mk('span', 'chat-item-title');
+    titleEl.textContent = c.title || 'New Chat';
+    titleEl.title = c.title || 'New Chat';
+    const delBtn = mk('button', 'chat-item-del');
+    delBtn.type = 'button';
+    delBtn.textContent = '×';
+    delBtn.title = 'Delete chat';
+    delBtn.onclick = e => { e.stopPropagation(); deleteChat(c.id); };
+    item.appendChild(titleEl);
+    item.appendChild(delBtn);
+    item.onclick = () => loadChat(c.id);
+    list.appendChild(item);
+  });
+}
+
+function toggleSidebar(force) {
+  const sb = document.getElementById('sidebar');
+  const bd = document.getElementById('sidebarBackdrop');
+  const shouldCollapse = typeof force === 'boolean' ? !force : !sb.classList.contains('collapsed');
+  sb.classList.toggle('collapsed', shouldCollapse);
+  bd.classList.toggle('show', !shouldCollapse && window.innerWidth <= 768);
+}
+
+function loadChat(chatId) {
+  if (busy) return;
+  const target = chats.find(c => c.id === chatId);
+  if (!target) return;
+  sid = target.id;
+  sessionMsgs = target.messages.slice();
+  localStorage.setItem(ACTIVE_SID_KEY, sid);
+
+  const feed = document.getElementById('feed');
+  const welcome = document.getElementById('welcome');
+  Array.from(feed.children).forEach(c => { if (c !== welcome) c.remove(); });
+  welcome.style.display = sessionMsgs.length ? 'none' : '';
+  sessionMsgs.forEach(m => renderBubble(m.role, m.content, m.sources || [], m.lang, '', 'restore'));
+  renderSidebar();
+  if (window.innerWidth <= 768) toggleSidebar(false);
+}
+
+function deleteChat(chatId) {
+  chats = chats.filter(c => c.id !== chatId);
+  if (sid === chatId) {
+    newChat(true);
+  } else {
+    persistAllChats();
+    renderSidebar();
+  }
+}
+
+async function maybeUpdateTitle(targetSid) {
+  const chat = chats.find(c => c.id === targetSid);
+  if (!chat) return;
+  const turns = chat.messages.filter(m => m.role === 'assistant').length;
+  if (turns !== 1 && turns % 5 !== 0) return;
+
+  try {
+    const r = await fetch(`${API}/title`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: chat.messages.map(m => ({ role: m.role === 'ai' ? 'assistant' : m.role, content: m.content })),
+      }),
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.title) {
+      chat.title = d.title;
+      persistAllChats();
+      renderSidebar();
+    }
+  } catch {}
+}
 
 const ta = document.getElementById('ta');
 const btnSend = document.getElementById('btnSend');
@@ -1020,7 +1327,8 @@ function createStreamingBubble(bLang) {
 function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag) {
   bLang = bLang || respLang;
   const feed = document.getElementById('feed');
-  const isAI = role === 'ai';
+  const isAI = role === 'ai' || role === 'assistant';
+  const roleClass = isAI ? 'ai' : 'user';
   const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   let content = raw, suggestions = [];
   if (isAI) {
@@ -1029,7 +1337,7 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
     suggestions = p.suggestions;
   }
 
-  const msg = mk('div', 'msg ' + role);
+  const msg = mk('div', 'msg ' + roleClass);
   if (isAI) {
     const av = mk('div', 'av');
     av.innerHTML = '<img src="https://www.ejust.edu.eg/assets/img/mini.png" alt="E-JUST"/>';
@@ -1103,8 +1411,9 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
   }
 
   if (skipSaveFlag !== 'restore') {
-    sessionMsgs.push({ role, content: raw, sources: sources || [], lang: bLang });
-    try { sessionStorage.setItem('ejust_msgs', JSON.stringify(sessionMsgs.slice(-30))); } catch {}
+    sessionMsgs.push({ role: isAI ? 'assistant' : 'user', content: raw, sources: sources || [], lang: bLang });
+    upsertActiveChat();
+    if (isAI) maybeUpdateTitle(sid);
   }
   scrollEnd();
 }
@@ -1206,25 +1515,27 @@ async function sendMsg(q) {
   ta.focus();
 }
 
-async function clearChat() {
-  try {
-    await fetch(`${API}/clear`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sid }),
-    });
-  } catch {}
+function newChat(silent) {
+  if (busy) return;
+  sid = createChatId();
   sessionMsgs = [];
-  sessionStorage.removeItem('ejust_msgs');
+  localStorage.setItem(ACTIVE_SID_KEY, sid);
   const feed = document.getElementById('feed');
   const welcome = document.getElementById('welcome');
   Array.from(feed.children).forEach(c => { if (c !== welcome) c.remove(); });
   welcome.style.display = '';
-  toast('Started a new chat', 'ok');
+  renderSidebar();
+  if (window.innerWidth <= 768) toggleSidebar(false);
+  if (!silent) toast('Started a new chat', 'ok');
+  ta.focus();
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
+  if (window.innerWidth <= 768) {
+    document.getElementById('sidebar').classList.add('collapsed');
+  }
   renderPromptGrid();
+  renderSidebar();
   try {
     const r = await fetch(`${API}/health`, { signal: AbortSignal.timeout(6000) });
     if (!r.ok) throw new Error();
@@ -1234,14 +1545,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('statusLabel').textContent = 'Online';
     ta.disabled = false;
 
-    const raw = sessionStorage.getItem('ejust_msgs');
-    if (raw) {
-      const msgs = JSON.parse(raw);
-      if (Array.isArray(msgs) && msgs.length) {
-        document.getElementById('welcome').style.display = 'none';
-        msgs.forEach(m => renderBubble(m.role, m.content, m.sources || [], m.lang, '', 'restore'));
-        sessionMsgs = msgs;
-      }
+    if (sessionMsgs.length) {
+      document.getElementById('welcome').style.display = 'none';
+      sessionMsgs.forEach(m => renderBubble(m.role === 'assistant' ? 'ai' : m.role, m.content, m.sources || [], m.lang, '', 'restore'));
     }
     if (h.api_key_configured === false) {
       toast('NVIDIA_API_KEY is not configured yet', 'err');

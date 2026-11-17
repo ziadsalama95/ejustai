@@ -278,4 +278,30 @@ describe('Worker HTTP routes', () => {
     expect(tgBody.text).toContain('What is E-JUST?');
     expect(tgBody.text).toContain('Fallback model answer');
   });
+
+  it('generates a concise chat title via POST /title', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'E-JUST Engineering Programs' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const env = createTestEnv({ NVIDIA_API_KEY: 'nvapi-test-key' });
+    const res = await worker.fetch(
+      new Request('http://localhost/title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'user', content: 'What engineering programs does E-JUST offer?' },
+            { role: 'assistant', content: 'E-JUST offers ECE, CSE, MTR, and more.' },
+          ],
+        }),
+      }),
+      env,
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { title: string };
+    expect(data.title).toBe('E-JUST Engineering Programs');
+  });
 });

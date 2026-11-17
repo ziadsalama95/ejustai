@@ -361,3 +361,39 @@ export function formatHistoryForModel(
     content: m.content,
   }));
 }
+
+export async function generateChatTitle(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  env: Pick<Env, 'NVIDIA_API_KEY' | 'NVIDIA_BASE_URL' | 'NVIDIA_CHAT_MODEL'>,
+): Promise<string> {
+  const snippet = messages
+    .slice(-10)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.slice(0, 220)}`)
+    .join('\n');
+
+  const fallback =
+    messages.find((m) => m.role === 'user')?.content.trim().slice(0, 48) || 'New Chat';
+
+  if (!env.NVIDIA_API_KEY) return fallback;
+
+  try {
+    const { content } = await generateChatCompletion(
+      [
+        {
+          role: 'system',
+          content:
+            'Summarize the conversation into a concise, descriptive 3 to 6 word chat title. Return ONLY the title text — no quotes, no markdown, no trailing punctuation.',
+        },
+        {
+          role: 'user',
+          content: snippet,
+        },
+      ],
+      env,
+    );
+    const cleaned = content.replace(/^["'`*#\s]+|["'`*#.\s]+$/g, '').slice(0, 64);
+    return cleaned || fallback;
+  } catch {
+    return fallback;
+  }
+}
