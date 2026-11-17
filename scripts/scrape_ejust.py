@@ -22,9 +22,12 @@ from collections import deque
 from pathlib import Path
 from urllib.parse import urldefrag, urljoin, urlparse
 
-import fitz  # PyMuPDF
+import pymupdf
 import requests
+import urllib3
 from bs4 import BeautifulSoup, Tag
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("ejust_scraper")
@@ -246,13 +249,21 @@ def write_markdown_doc(
 
 
 def extract_pdf_markdown(pdf_path: Path) -> str:
-    doc = fitz.open(pdf_path)
+    doc = pymupdf.open(pdf_path)
     pages_md = []
     for i, page in enumerate(doc, start=1):
         txt = re.sub(r"\n{3,}", "\n\n", page.get_text("text")).strip()
         if len(txt.split()) >= 15:
             pages_md.append(f"## Page {i}\n\n{txt}")
     return "\n\n".join(pages_md)
+
+
+def safe_get(session: requests.Session, url: str, timeout: int = 20, stream: bool = False) -> requests.Response:
+    try:
+        return session.get(url, timeout=timeout, allow_redirects=True, stream=stream)
+    except requests.exceptions.SSLError:
+        # E-JUST subdomains sometimes omit intermediate SSL certs on Linux
+        return session.get(url, timeout=timeout, allow_redirects=True, stream=stream, verify=False)
 
 
 def main() -> None:
@@ -292,7 +303,7 @@ def main() -> None:
         visited.add(url)
 
         try:
-            resp = session.get(url, timeout=18, allow_redirects=True)
+            resp = safe_get(session, url, timeout=20)
             if resp.status_code != 200:
                 continue
             if "html" not in resp.headers.get("Content-Type", "").lower():
@@ -357,7 +368,7 @@ def main() -> None:
         uid = hashlib.md5(pdf_url.encode()).hexdigest()[:12]
         pdf_path = PDF_TMP_DIR / f"{uid}.pdf"
         try:
-            r = session.get(pdf_url, timeout=25, stream=True)
+            r = safe_get(session, pdf_url, timeout=25, stream=True)
             if r.status_code != 200:
                 continue
             data = r.content
