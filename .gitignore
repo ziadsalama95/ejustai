@@ -1,0 +1,10 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+dist/
+*.log
+vectors.ndjson
+chunks-seed.sql
+.cache_pdfs/
+knowledge/scraped/

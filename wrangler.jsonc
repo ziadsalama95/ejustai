@@ -1,0 +1,45 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "ejustai",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-02-14",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"run_worker_first": [
+			"/health",
+			"/ask",
+			"/history",
+			"/clear",
+			"/feedback",
+			"/api/*"
+		]
+	},
+	"vars": {
+		"NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
+		"NVIDIA_CHAT_MODEL": "meta/llama-3.3-70b-instruct",
+		"NVIDIA_EMBED_MODEL": "nvidia/nv-embedqa-e5-v5",
+		"NVIDIA_RERANK_MODEL": "nvidia/nv-rerankqa-mistral-4b-v3",
+		"RAG_TOP_K": "5",
+		"RAG_MIN_SCORE": "0.22"
+	},
+	"vectorize": [
+		{
+			"binding": "VECTORIZE",
+			"index_name": "ejustai-index",
+			"remote": true
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "ejustai-db",
+			"database_id": "fb2e82d8-fe21-4d54-b9f9-a068e131e05d",
+			"migrations_dir": "migrations",
+			"remote": true
+		}
+	]
+}

@@ -1024,16 +1024,16 @@ header::after{
         <h1 class="welcome-h">Welcome to <em>E-JUST Assistant</em></h1>
         <p class="welcome-p">Your intelligent guide to Egypt-Japan University — programs, admissions, tuition, research, campus life, and more.</p>
 
-        <div class="api-card" id="apiCard">
+        <div class="api-card" id="apiCard" style="display:none">
           <div class="api-card-hd">
             <div class="api-icon">🔗</div>
             <div>
               <div class="api-card-ttl">Connect to the assistant</div>
-              <div class="api-card-sub">Paste your API endpoint to get started</div>
+              <div class="api-card-sub">Backend API endpoint</div>
             </div>
           </div>
           <p class="api-card-desc">
-            Enter your <strong>API URL</strong> below — it looks like <code>https://xxxx.ngrok-free.app</code>
+            Could not reach the built-in Cloudflare Worker API. Enter a custom <strong>API URL</strong> below if needed:
           </p>
           <div class="api-input-row">
             <input class="api-input" id="apiInput" type="url"
@@ -1085,8 +1085,19 @@ header::after{
         </button>
       </div>
       <div class="input-footer">
-        <span class="footer-hint">Enter to send · Shift+Enter for new line</span>
-        <span class="char-count" id="charCount">0 / 2000</span>
+        <span class="footer-hint" id="footerHint">Enter to send · Shift+Enter for new line</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <select id="facultyFilter" aria-label="Filter by faculty"
+                  style="background:var(--surface);color:var(--tx2);border:1px solid var(--brd2);border-radius:6px;padding:2px 7px;font-size:11px;font-family:var(--font-body);outline:none;cursor:pointer">
+            <option value="All">All Faculties</option>
+            <option value="CSIT">CSIT</option>
+            <option value="Engineering">Engineering</option>
+            <option value="Basic &amp; Applied Science">Basic &amp; Applied Science</option>
+            <option value="Pharmacy">Pharmacy</option>
+            <option value="Art &amp; Design">Art &amp; Design</option>
+          </select>
+          <span class="char-count" id="charCount">0 / 2000</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1212,6 +1223,7 @@ const CHIPS = [
   { icon: '📍', text: 'Where is E-JUST located?' },
   { icon: '🔬', text: 'What research areas does E-JUST focus on?' },
   { icon: '📝', text: 'How do I apply to E-JUST?' },
+  { icon: '🤖', text: 'How does E-JUST AI Assistant use RAG?' },
 ];
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1557,26 +1569,83 @@ async function sendMsg(q) {
   }, 8000);
 
   try {
+    const faculty = document.getElementById('facultyFilter')?.value || 'All';
     const r = await fetch(`${API}/ask`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ question: q, session_id: sid, lang: respLang }),
-      signal:  AbortSignal.timeout(52000),
+      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      body:    JSON.stringify({ question: q, session_id: sid, lang: respLang, faculty, stream: true }),
+      signal:  AbortSignal.timeout(55000),
     });
-    const d = await r.json();
-    if (!r.ok || d.error) throw new Error(d.error || `Error ${r.status}`);
 
-    clearTimeout(stillWorkingTimer);
-    kill(tyEl);
-    const bLang = d.lang || respLang;
-    renderBubble('ai', d.answer, d.sources || [], bLang);
+    const contentType = r.headers.get('Content-Type') || '';
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      throw new Error(errData.error || `Error ${r.status}`);
+    }
 
-    // Announce to screen readers
-    document.getElementById('ariaLive').textContent = d.answer.slice(0, 200);
+    if (contentType.includes('text/event-stream') && r.body) {
+      clearTimeout(stillWorkingTimer);
+      kill(tyEl);
 
-    hist.push({ role: 'user',      content: q });
-    hist.push({ role: 'assistant', content: d.answer });
-    if (hist.length > MAX_H * 2) hist = hist.slice(-MAX_H * 2);
+      const streamState = createStreamingBubble(respLang);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let fullAnswer = '';
+      let finalSources = [];
+      let finalLang = respLang;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() ?? '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data:')) continue;
+          const payloadStr = trimmed.slice(5).trim();
+          if (!payloadStr) continue;
+          let evt;
+          try { evt = JSON.parse(payloadStr); } catch { continue; }
+
+          if (evt.error) throw new Error(evt.error);
+          if (evt.meta) {
+            finalSources = evt.sources || [];
+            finalLang = evt.lang || respLang;
+          }
+          if (evt.token) {
+            fullAnswer += evt.token;
+            streamState.updateText(fullAnswer, finalLang);
+          }
+          if (evt.done) {
+            fullAnswer = evt.answer || fullAnswer;
+            finalSources = evt.sources || finalSources;
+            finalLang = evt.lang || finalLang;
+          }
+        }
+      }
+
+      streamState.finalize(fullAnswer, finalSources, finalLang, q);
+      document.getElementById('ariaLive').textContent = fullAnswer.slice(0, 200);
+      hist.push({ role: 'user',      content: q });
+      hist.push({ role: 'assistant', content: fullAnswer });
+      if (hist.length > MAX_H * 2) hist = hist.slice(-MAX_H * 2);
+    } else {
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+
+      clearTimeout(stillWorkingTimer);
+      kill(tyEl);
+      const bLang = d.lang || respLang;
+      renderBubble('ai', d.answer, d.sources || [], bLang, q);
+
+      document.getElementById('ariaLive').textContent = d.answer.slice(0, 200);
+      hist.push({ role: 'user',      content: q });
+      hist.push({ role: 'assistant', content: d.answer });
+      if (hist.length > MAX_H * 2) hist = hist.slice(-MAX_H * 2);
+    }
 
   } catch (err) {
     clearTimeout(stillWorkingTimer);
@@ -1645,7 +1714,50 @@ function renderErrorBubble(originalQuery) {
 }
 
 
-function renderBubble(role, raw, sources, bLang) {
+function createStreamingBubble(bLang) {
+  const feed = document.getElementById('feed');
+  const now  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const msg  = mk('div', 'msg ai');
+
+  const av = mk('div', 'av');
+  const img = document.createElement('img');
+  img.src = 'https://www.ejust.edu.eg/assets/img/mini.png';
+  img.alt = 'E-JUST';
+  av.appendChild(img);
+
+  const body = mk('div', 'msg-body');
+  const bub  = mk('div', 'bubble');
+  if (bLang === 'ar') bub.classList.add('ar');
+
+  const cursor = document.createElement('span');
+  cursor.className = 'tw-cursor';
+  cursor.textContent = '▋';
+  bub.appendChild(cursor);
+
+  body.appendChild(bub);
+  msg.appendChild(av);
+  msg.appendChild(body);
+  feed.appendChild(msg);
+  scrollEnd();
+
+  return {
+    updateText(text, lang) {
+      if (lang === 'ar' || hasArabic(text)) bub.classList.add('ar');
+      bub.textContent = text;
+      bub.appendChild(cursor);
+      const el = document.getElementById('scroll');
+      if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 180) {
+        el.scrollTop = el.scrollHeight;
+      }
+    },
+    finalize(raw, sources, lang, originalQuestion) {
+      kill(msg);
+      renderBubble('ai', raw, sources, lang, originalQuestion, true);
+    },
+  };
+}
+
+function renderBubble(role, raw, sources, bLang, originalQuestion, skipTypewriter) {
   bLang = bLang || respLang;
   const feed  = document.getElementById('feed');
   const isAI  = role === 'ai';
@@ -1740,10 +1852,20 @@ function renderBubble(role, raw, sources, bLang) {
     thumbBtn.setAttribute('aria-label', 'Good response');
     thumbBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/><path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>`;
     thumbBtn.onclick = () => {
-      thumbBtn.classList.toggle('liked');
-      thumbBtn.innerHTML = thumbBtn.classList.contains('liked')
+      const liked = thumbBtn.classList.toggle('liked');
+      thumbBtn.innerHTML = liked
         ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/><path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>`
         : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3H14z"/><path d="M7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>`;
+      fetch(`${API}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sid,
+          question: originalQuestion || '',
+          answer: content,
+          rating: liked ? 1 : 0,
+        }),
+      }).catch(() => {});
     };
     actions.appendChild(thumbBtn);
     footer.appendChild(actions);
@@ -1751,11 +1873,17 @@ function renderBubble(role, raw, sources, bLang) {
     msg.appendChild(av); msg.appendChild(body);
     feed.appendChild(msg);
 
-    // Start typewriter then append suggestions
-    typewriterRender(bub, rendered, () => {
+    if (skipTypewriter) {
+      bub.innerHTML = rendered;
       if (suggestions.length) renderSuggestions(feed, suggestions, bLang);
       document.getElementById('ariaLive').textContent = content.slice(0, 200);
-    });
+    } else {
+      // Start typewriter then append suggestions
+      typewriterRender(bub, rendered, () => {
+        if (suggestions.length) renderSuggestions(feed, suggestions, bLang);
+        document.getElementById('ariaLive').textContent = content.slice(0, 200);
+      });
+    }
 
     sessionMsgs.push({ role, content: raw, sources: sources || [], lang: bLang, time: now });
     saveSession();
@@ -2143,12 +2271,10 @@ function animatePlaceholder(newText) {
    INIT
 ═══════════════════════════════════════════════════════════════ */
 window.addEventListener('DOMContentLoaded', () => {
-  // Restore state
-  const savedUrl = localStorage.getItem('ejust_api');
-  if (savedUrl) {
-    document.getElementById('apiInput').value = savedUrl;
-    document.getElementById('spApiInput').value = savedUrl;
-  }
+  // Default to same-origin Cloudflare Worker API unless user saved a custom endpoint
+  const savedUrl = localStorage.getItem('ejust_api') || window.location.origin;
+  document.getElementById('apiInput').value = savedUrl;
+  document.getElementById('spApiInput').value = savedUrl;
 
   // Enter on welcome API input
   document.getElementById('apiInput').addEventListener('keydown', e => {
@@ -2159,40 +2285,43 @@ window.addEventListener('DOMContentLoaded', () => {
     if (v) localStorage.setItem('ejust_api', v);
   });
 
-  // Apply saved response language (now auto-detected, nothing to restore)
   renderChips();
   updateSettingsConn();
 
-  // Restore previous session messages if they exist
-  // Try to silently reconnect and restore so returning users skip the connect step
-  if (savedUrl && sessionStorage.getItem('ejust_msgs')) {
-    (async () => {
-      try {
-        const r = await fetch(savedUrl.replace(/\/+$/, '') + '/health', { signal: AbortSignal.timeout(5000) });
-        if (!r.ok) return;
-        API  = savedUrl.replace(/\/+$/, '');
-        live = true;
+  // Auto-connect to same-origin Worker API (or saved custom URL) on load
+  (async () => {
+    const targetUrl = savedUrl.replace(/\/+$/, '');
+    try {
+      const r = await fetch(targetUrl + '/health', { signal: AbortSignal.timeout(5000) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const health = await r.json().catch(() => ({}));
 
-        // Update UI to live state without animation noise
-        document.getElementById('statusPill').className = 'status-pill live';
-        document.getElementById('statusLabel').textContent = 'Live';
-        document.getElementById('apiCard').style.display = 'none';
-        document.getElementById('chipsSection').classList.add('show');
-        updateSettingsConn();
-        ta.disabled = false;
-        ta.placeholder = 'Ask about E-JUST…'; // direct, no animation on silent restore
+      API  = targetUrl;
+      live = true;
 
-        // Restore messages
-        const restored = restoreSession();
-        if (restored) {
-          document.getElementById('welcome').style.display = 'none';
-          scrollEnd();
-          toast('Session restored', 'info');
-        }
-        ta.focus();
-      } catch {}
-    })();
-  }
+      document.getElementById('statusPill').className = 'status-pill live';
+      document.getElementById('statusLabel').textContent = 'Live';
+      document.getElementById('apiCard').style.display = 'none';
+      document.getElementById('chipsSection').classList.add('show');
+      updateSettingsConn();
+      ta.disabled = false;
+      ta.placeholder = 'Ask about E-JUST…';
+
+      if (sessionStorage.getItem('ejust_msgs') && restoreSession()) {
+        document.getElementById('welcome').style.display = 'none';
+        scrollEnd();
+      } else {
+        await loadHistory();
+      }
+
+      if (health.api_key_configured === false) {
+        toast('Worker is live — set NVIDIA_API_KEY to enable AI answers', 'info');
+      }
+      ta.focus();
+    } catch {
+      document.getElementById('apiCard').style.display = '';
+    }
+  })();
 });
 </script>
 </body>
