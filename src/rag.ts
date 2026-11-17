@@ -375,8 +375,9 @@ export function buildSystemPrompt(
   const suggestionHeader =
     lang === 'ar' ? '**ممكن كمان تسأل عن:**' : '**You might also want to ask:**';
 
+  const firstName = userName ? userName.trim().split(/\s+/)[0] : '';
   const userLine = userName
-    ? `\nUSER PROFILE:\nThe user's name is "${userName}". You know their name! If they ask "what is my name?" or "تعرف اسمي؟", answer warmly with their name ("${userName}"). Address them naturally like a friendly, helpful campus peer.\n`
+    ? `\nUSER PROFILE:\nThe user's full name is "${userName}" (first name: "${firstName}"). Only use their first name ("${firstName}") occasionally in greetings or when they ask if you know their name. NEVER start factual answers with their name.\n`
     : '';
 
   return `You are the E-JUST AI Assistant — a warm, friendly, and knowledgeable companion for students, applicants, and staff at Egypt-Japan University of Science and Technology (E-JUST). Speak naturally like a supportive friend who genuinely wants to help, while keeping university facts accurate and clear.
