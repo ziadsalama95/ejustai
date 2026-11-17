@@ -53,6 +53,7 @@ export default {
     const url = new URL(request.url);
     const route = normalizePath(url.pathname);
     let activeSessionId: string | undefined;
+    let activeUserName: string | undefined;
     let activeQuestion: string | undefined;
 
     try {
@@ -61,17 +62,13 @@ export default {
           status: 'ok',
           service: 'ejustai',
           provider: 'nvidia-nim',
-          chat_model: env.NVIDIA_CHAT_MODEL || 'google/gemma-4-31b-it',
-          embed_model: env.NVIDIA_EMBED_MODEL || 'snowflake/arctic-embed-l',
-          rerank_model: env.NVIDIA_RERANK_MODEL || 'nvidia/nv-rerankqa-mistral-4b-v3',
+          chat_model: env.NVIDIA_CHAT_MODEL || 'nvidia/nemotron-3.5-bolt-e4b',
+          embed_model: env.NVIDIA_EMBED_MODEL || 'nvidia/embed-qa-4',
           vectorize_bound: Boolean(env.VECTORIZE),
           d1_bound: Boolean(env.DB),
           kv_bound: Boolean(env.CHAT_HISTORY),
           api_key_configured: Boolean(
             env.NVIDIA_API_KEY && env.NVIDIA_API_KEY !== 'nvapi-your-free-nvidia-key-here',
-          ),
-          telegram_logging_configured: Boolean(
-            env.TELEGRAM_BOT_TOKEN?.trim() && env.TELEGRAM_CHAT_ID?.trim(),
           ),
         });
       }
@@ -92,6 +89,7 @@ export default {
       if (route === '/feedback' && request.method === 'POST') {
         const body = (await request.json().catch(() => ({}))) as FeedbackRequest;
         const sessionId = body.session_id?.trim() || 'anonymous';
+        const userName = body.user_name?.trim().slice(0, 60) || undefined;
         const question = body.question?.trim() || '';
         const answer = body.answer?.trim() || '';
         const rating = typeof body.rating === 'number' ? body.rating : 1;
@@ -99,7 +97,7 @@ export default {
         const saved = await saveFeedback(env, sessionId, question, answer, rating);
         scheduleBackground(
           ctx,
-          logFeedbackToTelegram(env, { sessionId, question, answer, rating }),
+          logFeedbackToTelegram(env, { sessionId, userName, question, answer, rating }),
         );
         return jsonResponse({ saved });
       }
@@ -113,38 +111,19 @@ export default {
         return jsonResponse({ title });
       }
 
-      if (route === '/log-error' && request.method === 'POST') {
-        const body = (await request.json().catch(() => ({}))) as {
-          session_id?: string;
-          error?: string;
-          question?: string;
-          route?: string;
-        };
-        scheduleBackground(
-          ctx,
-          logErrorToTelegram(env, {
-            sessionId: body.session_id?.trim() || 'unknown',
-            route: body.route?.trim() || 'client-ui',
-            method: 'CLIENT',
-            status: 0,
-            error: body.error?.trim() || 'Unknown client error',
-            question: body.question?.trim(),
-          }),
-        );
-        return jsonResponse({ logged: true });
-      }
-
       if (route === '/ask' && request.method === 'POST') {
         const startedAt = Date.now();
         const body = (await request.json().catch(() => ({}))) as AskRequest;
         const question = body.question?.trim() || '';
         const sessionId = body.session_id?.trim() || 'default';
+        const userName = body.user_name?.trim().slice(0, 60) || undefined;
         const faculty = body.faculty?.trim() || undefined;
         const wantsStream =
           body.stream === true ||
           (request.headers.get('Accept') || '').includes('text/event-stream');
 
         activeSessionId = sessionId;
+        activeUserName = userName;
         activeQuestion = question;
 
         if (!question) {
@@ -160,7 +139,7 @@ export default {
         const { chunks, mode } = await retrieveContext(searchQuery, env, faculty);
         const sources = dedupeSources(chunks);
 
-        const systemPrompt = buildSystemPrompt(chunks, lang);
+        const systemPrompt = buildSystemPrompt(chunks, lang, userName);
         const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
           { role: 'system', content: systemPrompt },
           ...formatHistoryForModel(history),
@@ -209,6 +188,7 @@ export default {
                   appendHistory(env, sessionId, question, fullAnswer, sources),
                   logChatToTelegram(env, {
                     sessionId,
+                    userName,
                     question,
                     rewrittenQuery: searchQuery,
                     answer: fullAnswer,
@@ -227,6 +207,7 @@ export default {
                 sendEvent({ error: msg });
                 const errTask = logErrorToTelegram(env, {
                   sessionId,
+                  userName,
                   route,
                   method: request.method,
                   status: 502,
@@ -261,6 +242,7 @@ export default {
           ctx,
           logChatToTelegram(env, {
             sessionId,
+            userName,
             question,
             rewrittenQuery: searchQuery,
             answer: content,
@@ -298,6 +280,7 @@ export default {
         ctx,
         logErrorToTelegram(env, {
           sessionId: activeSessionId,
+          userName: activeUserName,
           route,
           method: request.method,
           status,

@@ -1069,6 +1069,149 @@ header {
   .chat-item-del { opacity: 0.7; }
 }
 
+/* Name Modal */
+.name-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s var(--ease);
+}
+
+.name-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.name-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 28px 24px 24px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.16);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.name-card-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 9px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.name-card-logo img { width: 100%; height: 100%; object-fit: contain; }
+
+.name-card-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.name-card-sub {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--tx-2);
+  margin-bottom: 18px;
+}
+
+.name-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border-hi);
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--font);
+  font-size: 15px;
+  outline: none;
+  margin-bottom: 12px;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.name-input:focus {
+  border-color: var(--brand);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.name-actions {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+}
+
+.name-btn-primary {
+  flex: 1;
+  height: 42px;
+  border-radius: 11px;
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+
+.name-btn-primary:hover { background: var(--brand-hi); }
+
+.name-btn-cancel {
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--tx-2);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.name-btn-cancel:hover { background: var(--surface-2); color: var(--tx); }
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--tx-2);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 140px;
+  box-shadow: var(--shadow-sm);
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+
+.user-pill:hover { background: var(--surface-2); border-color: var(--border-hi); color: var(--tx); }
+.user-pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 @media (max-width: 640px) {
   header { padding: 0 12px; height: 54px; }
   .sidebar { top: 54px; }
@@ -1098,6 +1241,21 @@ header {
 <div id="ariaLive" class="sr-only" aria-live="polite"></div>
 <div id="toasts"></div>
 
+<div class="name-overlay" id="nameOverlay" role="dialog" aria-modal="true" aria-labelledby="nameModalTitle">
+  <form class="name-card" onsubmit="saveUserName(event)">
+    <div class="name-card-logo">
+      <img src="https://www.ejust.edu.eg/assets/img/mini.png" alt="E-JUST"/>
+    </div>
+    <h2 class="name-card-title" id="nameModalTitle">Welcome to E-JUST AI</h2>
+    <p class="name-card-sub" id="nameModalSub">Enter your name so I can personalize your conversation.</p>
+    <input class="name-input" id="nameInput" type="text" maxlength="50" placeholder="Your name (e.g. Ziad)" autocomplete="name" required/>
+    <div class="name-actions">
+      <button type="button" class="name-btn-cancel" id="nameCancelBtn" onclick="closeNameModal()" style="display:none">Cancel</button>
+      <button type="submit" class="name-btn-primary" id="nameSubmitBtn">Continue</button>
+    </div>
+  </form>
+</div>
+
 <header>
   <div style="display:flex;align-items:center;gap:10px">
     <button class="btn-icon" onclick="toggleSidebar()" title="Toggle chat history" aria-label="Toggle chat history">
@@ -1114,6 +1272,12 @@ header {
   </div>
 
   <div class="hdr-right">
+    <button class="user-pill" id="userNameBtn" onclick="openNameModal(true)" title="Change your name" aria-label="Change your name" style="display:none">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+      <span id="userNameLabel"></span>
+    </button>
     <button class="btn-new" onclick="newChat()" aria-label="New chat">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 5v14M5 12h14"/>
@@ -1230,15 +1394,71 @@ const UI_TEXT = {
 const API = window.location.origin;
 const CHATS_KEY = 'ejust_chats_v1';
 const ACTIVE_SID_KEY = 'ejust_active_sid';
+const USER_NAME_KEY = 'ejust_user_name';
 
 let live = false;
 let busy = false;
 let uiLang = 'en';
 let respLang = 'en';
+let userName = (localStorage.getItem(USER_NAME_KEY) || '').trim();
 let chats = loadAllChats();
 let sid = localStorage.getItem(ACTIVE_SID_KEY) || createChatId();
 let sessionMsgs = getActiveChat()?.messages.slice() || [];
 let lastSendTime = 0;
+
+function applyUserNameUI() {
+  const pill = document.getElementById('userNameBtn');
+  const lbl = document.getElementById('userNameLabel');
+  const wt = document.getElementById('welcomeTitle');
+  if (userName) {
+    pill.style.display = 'inline-flex';
+    lbl.textContent = userName;
+    wt.textContent = `How can I help you today, ${userName}?`;
+  } else {
+    pill.style.display = 'none';
+    wt.textContent = 'How can I help you today?';
+  }
+}
+
+function openNameModal(allowCancel) {
+  const overlay = document.getElementById('nameOverlay');
+  const input = document.getElementById('nameInput');
+  const cancelBtn = document.getElementById('nameCancelBtn');
+  const titleEl = document.getElementById('nameModalTitle');
+  const subEl = document.getElementById('nameModalSub');
+  const submitBtn = document.getElementById('nameSubmitBtn');
+
+  input.value = userName;
+  cancelBtn.style.display = allowCancel && userName ? '' : 'none';
+  titleEl.textContent = allowCancel && userName ? 'Update your name' : 'Welcome to E-JUST AI';
+  subEl.textContent = allowCancel && userName
+    ? 'Change how the assistant addresses you.'
+    : 'Enter your name to personalize your conversation.';
+  submitBtn.textContent = allowCancel && userName ? 'Save' : 'Continue';
+  overlay.classList.add('open');
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeNameModal() {
+  if (!userName) return;
+  document.getElementById('nameOverlay').classList.remove('open');
+  ta.focus();
+}
+
+function saveUserName(e) {
+  e.preventDefault();
+  const val = document.getElementById('nameInput').value.trim().slice(0, 50);
+  if (!val) return;
+  userName = val;
+  localStorage.setItem(USER_NAME_KEY, userName);
+  applyUserNameUI();
+  document.getElementById('nameOverlay').classList.remove('open');
+  if (live) {
+    ta.disabled = false;
+    resize();
+    ta.focus();
+  }
+}
 
 function createChatId() {
   return 'u_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -1449,6 +1669,7 @@ function resize() {
 }
 
 function interceptSend() {
+  if (!userName) { openNameModal(false); return; }
   const q = ta.value.trim();
   if (!q || !live || busy) return;
   if (Date.now() - lastSendTime < 1000) return;
@@ -1758,7 +1979,7 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
       fetch(`${API}/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sid, question: originalQuestion || '', answer: content, rating: liked ? 1 : 0 }),
+        body: JSON.stringify({ session_id: sid, user_name: userName, question: originalQuestion || '', answer: content, rating: liked ? 1 : 0 }),
       }).catch(() => {});
     };
     actions.appendChild(copyBtn);
@@ -1827,16 +2048,14 @@ async function sendMsg(q) {
     const r = await fetch(`${API}/ask`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ question: q, session_id: sid, lang: respLang, stream: true }),
+      body: JSON.stringify({ question: q, session_id: sid, user_name: userName, lang: respLang, stream: true }),
       signal: AbortSignal.timeout(55000),
     });
 
     const contentType = r.headers.get('Content-Type') || '';
     if (!r.ok) {
       const errData = await r.json().catch(() => ({}));
-      const err = new Error(errData.error || `Error ${r.status}`);
-      err.serverLogged = true;
-      throw err;
+      throw new Error(errData.error || `Error ${r.status}`);
     }
 
     if (contentType.includes('text/event-stream') && r.body) {
@@ -1857,7 +2076,7 @@ async function sendMsg(q) {
           if (!t.startsWith('data:')) continue;
           let evt;
           try { evt = JSON.parse(t.slice(5).trim()); } catch { continue; }
-          if (evt.error) { const e = new Error(evt.error); e.serverLogged = true; throw e; }
+          if (evt.error) throw new Error(evt.error);
           if (evt.meta) { finalSources = evt.sources || []; finalLang = evt.lang || respLang; }
           if (evt.token) { fullAnswer += evt.token; streamState.updateText(fullAnswer, finalLang); }
           if (evt.done) { fullAnswer = evt.answer || fullAnswer; finalSources = evt.sources || finalSources; finalLang = evt.lang || finalLang; }
@@ -1867,7 +2086,7 @@ async function sendMsg(q) {
       document.getElementById('ariaLive').textContent = fullAnswer.slice(0, 200);
     } else {
       const d = await r.json();
-      if (d.error) { const e = new Error(d.error); e.serverLogged = true; throw e; }
+      if (d.error) throw new Error(d.error);
       kill(tyEl);
       renderBubble('ai', d.answer, d.sources || [], d.lang || respLang, q);
     }
@@ -1875,13 +2094,6 @@ async function sendMsg(q) {
     kill(tyEl);
     renderErrorBubble(q);
     toast(err.message || 'Request failed', 'err');
-    if (!err.serverLogged) {
-      fetch(`${API}/log-error`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sid, error: err.message || 'Client timeout/network error', question: q, route: '/ask' }),
-      }).catch(() => {});
-    }
   }
 
   busy = false;
@@ -1916,6 +2128,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.innerWidth <= 768) {
     document.getElementById('sidebar').classList.add('collapsed');
   }
+  applyUserNameUI();
   renderPromptGrid();
   renderSidebar();
   try {
@@ -1923,16 +2136,20 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (!r.ok) throw new Error();
     const h = await r.json();
     live = true;
-    ta.disabled = false;
 
     if (sessionMsgs.length) {
       document.getElementById('welcome').style.display = 'none';
       sessionMsgs.forEach(m => renderBubble(m.role === 'assistant' ? 'ai' : m.role, m.content, m.sources || [], m.lang, '', 'restore'));
     }
+    if (!userName) {
+      openNameModal(false);
+    } else {
+      ta.disabled = false;
+      ta.focus();
+    }
     if (h.api_key_configured === false) {
       toast('NVIDIA_API_KEY is not configured yet', 'err');
     }
-    ta.focus();
   } catch {
     toast('Could not connect to assistant API', 'err');
   }

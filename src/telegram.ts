@@ -45,6 +45,7 @@ export async function logChatToTelegram(
   env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
   params: {
     sessionId: string;
+    userName?: string;
     question: string;
     rewrittenQuery?: string;
     answer: string;
@@ -57,6 +58,7 @@ export async function logChatToTelegram(
   },
 ): Promise<void> {
   const tag = `#s_${sanitizeTag(params.sessionId)}`;
+  const userLabel = params.userName ? escapeHtml(params.userName) : 'Anonymous';
   const rewrittenLine =
     params.rewrittenQuery && params.rewrittenQuery !== params.question
       ? `\n🔎 <b>Rewritten Query:</b> <i>${escapeHtml(truncate(params.rewrittenQuery, 240))}</i>`
@@ -68,7 +70,7 @@ export async function logChatToTelegram(
 
   const msg = [
     `💬 <b>E-JUST AI — Chat Interaction</b>`,
-    `🆔 <b>Session:</b> <code>${escapeHtml(params.sessionId)}</code> (${tag})`,
+    `👤 <b>User:</b> <b>${userLabel}</b> | 🆔 <b>Session:</b> <code>${escapeHtml(params.sessionId)}</code> (${tag})`,
     `⚙️ <b>Model:</b> <code>${escapeHtml(params.model)}</code> | <b>Mode:</b> <code>${escapeHtml(params.retrievalMode)}</code>`,
     `🌐 <b>Lang:</b> ${escapeHtml(params.lang.toUpperCase())} | <b>Faculty:</b> ${escapeHtml(params.faculty || 'All')} | <b>Latency:</b> ${params.latencyMs}ms`,
     ``,
@@ -89,6 +91,7 @@ export async function logErrorToTelegram(
   env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
   params: {
     sessionId?: string;
+    userName?: string;
     route: string;
     method: string;
     status: number;
@@ -98,13 +101,14 @@ export async function logErrorToTelegram(
 ): Promise<void> {
   const sid = params.sessionId || 'unknown';
   const tag = `#s_${sanitizeTag(sid)}`;
+  const userLabel = params.userName ? escapeHtml(params.userName) : 'Anonymous';
   const promptBlock = params.question
     ? `\n\n👤 <b>Prompt:</b>\n<pre>${escapeHtml(truncate(params.question, 800))}</pre>`
     : '';
 
   const msg = [
     `🚨 <b>E-JUST AI — Error Alert</b>`,
-    `🆔 <b>Session:</b> <code>${escapeHtml(sid)}</code> (${tag})`,
+    `👤 <b>User:</b> <b>${userLabel}</b> | 🆔 <b>Session:</b> <code>${escapeHtml(sid)}</code> (${tag})`,
     `📍 <b>Endpoint:</b> <code>${escapeHtml(params.method)} ${escapeHtml(params.route)}</code> | <b>Status:</b> <code>${params.status}</code>`,
     ``,
     `❌ <b>Error:</b>`,
@@ -118,6 +122,7 @@ export async function logFeedbackToTelegram(
   env: Pick<Env, 'TELEGRAM_BOT_TOKEN' | 'TELEGRAM_CHAT_ID'>,
   params: {
     sessionId: string;
+    userName?: string;
     question: string;
     answer: string;
     rating: number;
@@ -125,10 +130,11 @@ export async function logFeedbackToTelegram(
 ): Promise<void> {
   const icon = params.rating > 0 ? '👍' : '👎';
   const tag = `#s_${sanitizeTag(params.sessionId)}`;
+  const userLabel = params.userName ? escapeHtml(params.userName) : 'Anonymous';
 
   const msg = [
     `${icon} <b>E-JUST AI — User Feedback</b>`,
-    `🆔 <b>Session:</b> <code>${escapeHtml(params.sessionId)}</code> (${tag})`,
+    `👤 <b>User:</b> <b>${userLabel}</b> | 🆔 <b>Session:</b> <code>${escapeHtml(params.sessionId)}</code> (${tag})`,
     `⭐ <b>Rating:</b> ${params.rating > 0 ? 'Helpful (+1)' : 'Removed (0)'}`,
     ``,
     `👤 <b>Prompt:</b>`,

@@ -353,7 +353,11 @@ export function dedupeSources(chunks: RetrievedChunk[]): SourceRef[] {
   return Array.from(seen.values());
 }
 
-export function buildSystemPrompt(chunks: RetrievedChunk[], lang: 'en' | 'ar'): string {
+export function buildSystemPrompt(
+  chunks: RetrievedChunk[],
+  lang: 'en' | 'ar',
+  userName?: string,
+): string {
   const contextBlock = chunks.length
     ? chunks
         .map(
@@ -371,8 +375,12 @@ export function buildSystemPrompt(chunks: RetrievedChunk[], lang: 'en' | 'ar'): 
   const suggestionHeader =
     lang === 'ar' ? '**ممكن كمان تسأل عن:**' : '**You might also want to ask:**';
 
-  return `You are the E-JUST AI Assistant — the authoritative, grounded RAG assistant for Egypt-Japan University of Science and Technology (E-JUST) serving students, prospective applicants, faculty, and staff.
+  const userLine = userName
+    ? `\nUSER PROFILE:\nThe user's name is "${userName}". Address them naturally by name when appropriate without overusing it.\n`
+    : '';
 
+  return `You are the E-JUST AI Assistant — the authoritative, grounded RAG assistant for Egypt-Japan University of Science and Technology (E-JUST) serving students, prospective applicants, faculty, and staff.
+${userLine}
 RULES:
 1. Ground every factual claim in the RETRIEVED CONTEXT below. Cite supporting sources inline using [1], [2], etc. matching the source numbers below.
 2. Never invent tuition numbers, deadlines, GPAs, or policies that are not explicitly present in the retrieved context.

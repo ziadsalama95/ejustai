@@ -49,6 +49,7 @@ export interface ChatMessage {
 export interface AskRequest {
   question?: string;
   session_id?: string;
+  user_name?: string;
   lang?: 'en' | 'ar';
   faculty?: string;
   stream?: boolean;
@@ -67,6 +68,7 @@ export interface AskResponse {
 
 export interface FeedbackRequest {
   session_id?: string;
+  user_name?: string;
   question?: string;
   answer?: string;
   rating?: number;
