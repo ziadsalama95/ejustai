@@ -488,7 +488,7 @@ header {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: min(85%, 660px);
+  max-width: min(90%, 690px);
   min-width: 0;
 }
 
@@ -518,6 +518,9 @@ header {
   color: var(--tx);
   border: 1px solid var(--border);
   border-top-left-radius: 4px;
+  padding: 16px 20px;
+  font-size: 15px;
+  line-height: 1.7;
   box-shadow: var(--shadow-sm);
 }
 
@@ -537,18 +540,46 @@ header {
 .bubble h1, .bubble h2, .bubble h3 {
   font-weight: 700;
   color: var(--tx);
-  margin: 12px 0 6px;
-  line-height: 1.3;
+  margin: 16px 0 6px;
+  line-height: 1.35;
 }
 .bubble h1:first-child, .bubble h2:first-child, .bubble h3:first-child { margin-top: 0; }
-.bubble h1 { font-size: 17px; }
+.bubble h1 { font-size: 17.5px; }
 .bubble h2 { font-size: 15.5px; }
 .bubble h3 { font-size: 14.5px; }
 .bubble p { margin: 0 0 10px; }
 .bubble p:last-child { margin-bottom: 0; }
-.bubble ul, .bubble ol { margin: 6px 0 10px 20px; display: flex; flex-direction: column; gap: 4px; }
-.bubble.ar ul, .bubble.ar ol { margin: 6px 20px 10px 0; }
+.bubble ul, .bubble ol {
+  margin: 6px 0 12px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.bubble ul ul, .bubble ol ul, .bubble ul ol {
+  margin: 4px 0 4px;
+  padding-left: 18px;
+  gap: 3px;
+}
+.bubble li { line-height: 1.6; }
+.bubble.ar ul, .bubble.ar ol { padding-left: 0; padding-right: 20px; }
 .bubble strong { font-weight: 600; color: var(--tx); }
+.cite-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid #bfdbfe;
+  vertical-align: 1px;
+}
 .bubble a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
 .bubble a:hover { color: var(--brand-hi); }
 .bubble code {
@@ -1280,38 +1311,144 @@ function parseSuggestions(text) {
   return { main: text, suggestions: [] };
 }
 
-function mdRender(raw) {
-  let s = esc(raw);
-  s = s.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, c) => `<pre><code>${c.trimEnd()}</code></pre>`);
-  s = s.replace(/((?:\|[^\n]+\|\n?){2,})/g, block => {
-    const rows = block.trim().split('\n').map(r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
-    if (rows.length < 2 || !rows[1].every(c => /^:?-{2,}:?$/.test(c))) return block;
-    const ths = rows[0].map(c => `<th>${c}</th>`).join('');
-    const trs = rows.slice(2).map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('');
-    return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
-  });
-  s = s.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  s = s.replace(/^---+$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:10px 0">');
-  s = s.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-  s = s.replace(/^[ \t]*[-*+] (.+)$/gm, '<li>$1</li>');
-  s = s.replace(/(<li>[\s\S]+?<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
-  s = s.replace(/^\d+[.)]\s+(.+)$/gm, '<oli>$1</oli>');
-  s = s.replace(/(<oli>[\s\S]+?<\/oli>\n?)+/g, m => `<ol>${m.replace(/<oli>/g,'<li>').replace(/<\/oli>/g,'</li>')}</ol>`);
+function inlineMd(text) {
+  let s = esc(text);
+  s = s.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
   s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
-  s = s.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   s = s.replace(/(?<![="'])(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
-  s = s.split(/\n{2,}/).map(b => {
-    b = b.trim();
-    if (!b) return '';
-    if (/^<(h[1-6]|ul|ol|pre|blockquote|hr|table)/.test(b)) return b;
-    return `<p>${b.replace(/\n/g, '<br>')}</p>`;
-  }).join('\n');
+  s = s.replace(/\[(\d+)\]/g, '<span class="cite-badge">$1</span>');
   return s;
+}
+
+function mdRender(raw) {
+  const lines = String(raw || '').replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code block
+    if (/^```/.test(line.trim())) {
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i].trim())) {
+        codeLines.push(esc(lines[i]));
+        i++;
+      }
+      i++;
+      out.push(`<pre><code>${codeLines.join('\n')}</code></pre>`);
+      continue;
+    }
+
+    // Markdown table
+    if (/^\|.+\|$/.test(line.trim()) && i + 1 < lines.length && /^\|[\s:|-]+\|$/.test(lines[i + 1].trim())) {
+      const parseRow = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => inlineMd(c.trim()));
+      const ths = parseRow(line).map(c => `<th>${c}</th>`).join('');
+      i += 2;
+      const trs = [];
+      while (i < lines.length && /^\|.+\|$/.test(lines[i].trim())) {
+        trs.push(`<tr>${parseRow(lines[i]).map(c => `<td>${c}</td>`).join('')}</tr>`);
+        i++;
+      }
+      out.push(`<table><thead><tr>${ths}</tr></thead><tbody>${trs.join('')}</tbody></table>`);
+      continue;
+    }
+
+    // Blank line
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      out.push('<hr style="border:none;border-top:1px solid var(--border);margin:12px 0">');
+      i++;
+      continue;
+    }
+
+    // Headings
+    const hm = line.match(/^(#{1,3})\s+(.+)$/);
+    if (hm) {
+      const lvl = hm[1].length;
+      out.push(`<h${lvl}>${inlineMd(hm[2])}</h${lvl}>`);
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (/^>\s?/.test(line)) {
+      const qLines = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) {
+        qLines.push(inlineMd(lines[i].replace(/^>\s?/, '')));
+        i++;
+      }
+      out.push(`<blockquote>${qLines.join('<br>')}</blockquote>`);
+      continue;
+    }
+
+    // Bullet / numbered lists (collapses blank lines between items, supports 1-level nesting)
+    const isUl = l => /^[ \t]*[-*+]\s+/.test(l);
+    const isOl = l => /^[ \t]*\d+[.)]\s+/.test(l);
+    if (isUl(line) || isOl(line)) {
+      const tag = isOl(line) ? 'ol' : 'ul';
+      const items = [];
+      while (i < lines.length) {
+        const cur = lines[i];
+        if (!cur.trim()) {
+          // Look ahead: if next non-empty line is also a list item, stay in the same list
+          let j = i + 1;
+          while (j < lines.length && !lines[j].trim()) j++;
+          if (j < lines.length && (isUl(lines[j]) || isOl(lines[j]))) {
+            i = j;
+            continue;
+          }
+          break;
+        }
+        if (isUl(cur) || isOl(cur)) {
+          const indent = cur.match(/^([ \t]*)/)[1].length;
+          const text = cur.replace(/^[ \t]*(?:[-*+]|\d+[.)])\s+/, '');
+          if (indent >= 2 && items.length > 0) {
+            items[items.length - 1].sub.push(inlineMd(text));
+          } else {
+            items.push({ text: inlineMd(text), sub: [] });
+          }
+          i++;
+        } else {
+          break;
+        }
+      }
+      const htmlItems = items.map(it =>
+        it.sub.length
+          ? `<li>${it.text}<ul>${it.sub.map(s => `<li>${s}</li>`).join('')}</ul></li>`
+          : `<li>${it.text}</li>`
+      ).join('');
+      out.push(`<${tag}>${htmlItems}</${tag}>`);
+      continue;
+    }
+
+    // Paragraph
+    const pLines = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^(#{1,3}\s|```|>|---+|\|.+\|$)/.test(lines[i].trim()) &&
+      !isUl(lines[i]) &&
+      !isOl(lines[i])
+    ) {
+      pLines.push(inlineMd(lines[i]));
+      i++;
+    }
+    if (pLines.length) {
+      out.push(`<p>${pLines.join('<br>')}</p>`);
+    }
+  }
+
+  return out.join('\n');
 }
 
 function showTyping() {
@@ -1342,10 +1479,15 @@ function createStreamingBubble(bLang) {
   feed.appendChild(msg);
   scrollEnd();
 
+  let lastRenderAt = 0;
   return {
     updateText(text, lang) {
       if (lang === 'ar' || hasArabic(text)) bub.classList.add('ar');
-      bub.textContent = text;
+      const now = performance.now();
+      if (now - lastRenderAt < 70) return;
+      lastRenderAt = now;
+      const preview = parseSuggestions(text).main;
+      bub.innerHTML = mdRender(preview);
       bub.appendChild(cursor);
       if (scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 180) scrollEnd();
     },
