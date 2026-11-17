@@ -69,7 +69,8 @@ function buildD1SeedSql(chunks: KnowledgeChunk[]): string {
 async function main() {
   loadDevVars();
   const args = new Set(process.argv.slice(2));
-  const shouldUpload = args.has('--upload');
+  const shouldUpload = args.has('--upload') || args.has('--upload-only');
+  const uploadOnly = args.has('--upload-only');
   const chunksOnly = args.has('--chunks-only');
 
   if (!existsSync(KNOWLEDGE_DIR)) {
@@ -113,51 +114,57 @@ async function main() {
     return;
   }
 
-  console.log('Generating contextual embeddings via NVIDIA NIM...');
-  const batchSize = 16;
-  const ndjsonLines: string[] = [];
+  let ndjsonLines: string[] = [];
 
-  for (let i = 0; i < allChunks.length; i += batchSize) {
-    const batch = allChunks.slice(i, i + batchSize);
-    const contextualInputs = batch.map(
-      (c) => `[${c.title} | ${c.faculty || 'EJUST General'} | ${c.label || 'general'}]\n${c.text}`,
-    );
+  if (uploadOnly && existsSync(NDJSON_OUT)) {
+    ndjsonLines = readFileSync(NDJSON_OUT, 'utf-8').split('\n').filter(Boolean);
+    console.log(`Reusing ${ndjsonLines.length} existing vectors from ${NDJSON_OUT}`);
+  } else {
+    console.log('Generating contextual embeddings via NVIDIA NIM...');
+    const batchSize = 16;
 
-    const vectors = await embedTexts(contextualInputs, 'passage', {
-      NVIDIA_API_KEY: apiKey,
-      NVIDIA_BASE_URL: process.env.NVIDIA_BASE_URL,
-      NVIDIA_EMBED_MODEL: process.env.NVIDIA_EMBED_MODEL,
-    });
-
-    for (let j = 0; j < batch.length; j++) {
-      const chunk = batch[j];
-      ndjsonLines.push(
-        JSON.stringify({
-          id: chunk.id,
-          values: vectors[j],
-          metadata: {
-            title: chunk.title,
-            url: chunk.url,
-            faculty: chunk.faculty || 'EJUST General',
-            label: chunk.label || 'general',
-            lang: chunk.lang || 'en',
-            text: chunk.text,
-          },
-        }),
+    for (let i = 0; i < allChunks.length; i += batchSize) {
+      const batch = allChunks.slice(i, i + batchSize);
+      const contextualInputs = batch.map(
+        (c) => `[${c.title} | ${c.faculty || 'EJUST General'} | ${c.label || 'general'}]\n${c.text}`,
       );
+
+      const vectors = await embedTexts(contextualInputs, 'passage', {
+        NVIDIA_API_KEY: apiKey,
+        NVIDIA_BASE_URL: process.env.NVIDIA_BASE_URL,
+        NVIDIA_EMBED_MODEL: process.env.NVIDIA_EMBED_MODEL,
+      });
+
+      for (let j = 0; j < batch.length; j++) {
+        const chunk = batch[j];
+        ndjsonLines.push(
+          JSON.stringify({
+            id: chunk.id,
+            values: vectors[j],
+            metadata: {
+              title: chunk.title,
+              url: chunk.url,
+              faculty: chunk.faculty || 'EJUST General',
+              label: chunk.label || 'general',
+              lang: chunk.lang || 'en',
+              text: chunk.text,
+            },
+          }),
+        );
+      }
+
+      if ((i + batchSize) % 160 === 0 || i + batchSize >= allChunks.length) {
+        console.log(`Embedded ${Math.min(i + batchSize, allChunks.length)}/${allChunks.length} chunks`);
+      }
     }
 
-    if ((i + batchSize) % 160 === 0 || i + batchSize >= allChunks.length) {
-      console.log(`Embedded ${Math.min(i + batchSize, allChunks.length)}/${allChunks.length} chunks`);
-    }
+    writeFileSync(NDJSON_OUT, ndjsonLines.join('\n') + '\n', 'utf-8');
+    console.log(`Wrote Vectorize NDJSON -> ${NDJSON_OUT}`);
   }
-
-  writeFileSync(NDJSON_OUT, ndjsonLines.join('\n') + '\n', 'utf-8');
-  console.log(`Wrote Vectorize NDJSON -> ${NDJSON_OUT}`);
 
   if (shouldUpload) {
     console.log(`Uploading chunks to Cloudflare D1 (${D1_DB_NAME})...`);
-    execSync(`npx wrangler d1 execute ${D1_DB_NAME} --remote --file="${SQL_OUT}"`, {
+    execSync(`npx wrangler d1 execute ${D1_DB_NAME} --remote --yes --file="${SQL_OUT}"`, {
       stdio: 'inherit',
     });
 

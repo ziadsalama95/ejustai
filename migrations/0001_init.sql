@@ -29,12 +29,12 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS chunks_ad AFTER DELETE ON chunks BEGIN
   INSERT INTO chunks_fts(chunks_fts, rowid, id, title, faculty, label, text)
-  VALUES ('delete', old.rowid, old.id, old.faculty, old.label, old.text);
+  VALUES ('delete', old.rowid, old.id, old.title, old.faculty, old.label, old.text);
 END;
 
 CREATE TRIGGER IF NOT EXISTS chunks_au AFTER UPDATE ON chunks BEGIN
   INSERT INTO chunks_fts(chunks_fts, rowid, id, title, faculty, label, text)
-  VALUES ('delete', old.rowid, old.id, old.faculty, old.label, old.text);
+  VALUES ('delete', old.rowid, old.id, old.title, old.faculty, old.label, old.text);
   INSERT INTO chunks_fts(rowid, id, title, faculty, label, text)
   VALUES (new.rowid, new.id, new.title, new.faculty, new.label, new.text);
 END;
