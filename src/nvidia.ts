@@ -1,13 +1,14 @@
 import type { ChatMessage, Env, RetrievedChunk } from './types';
 
 const DEFAULT_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-const DEFAULT_CHAT_MODEL = 'google/gemma-4-31b-it';
+const DEFAULT_CHAT_MODEL = 'nvidia/nemotron-3.5-bolt-e4b';
 const CHAT_FALLBACK_MODELS = [
   'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'z-ai/glm-5.3-flash',
+  'minimaxai/minimax-m3.1-flash',
   'google/gemma-3-12b-it',
 ];
 const DEFAULT_EMBED_MODEL = 'snowflake/arctic-embed-l';
-const DEFAULT_RERANK_MODEL = 'nvidia/nv-rerankqa-mistral-4b-v3';
 
 export class NvidiaApiError extends Error {
   constructor(
@@ -67,7 +68,7 @@ export async function embedTexts(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) {
@@ -97,11 +98,11 @@ export async function rerankChunks(
   topK: number,
   env: Pick<Env, 'NVIDIA_API_KEY' | 'NVIDIA_RERANK_MODEL'>,
 ): Promise<{ chunks: RetrievedChunk[]; reranked: boolean }> {
-  if (chunks.length <= 1 || !env.NVIDIA_API_KEY) {
+  const model = env.NVIDIA_RERANK_MODEL?.trim();
+  if (chunks.length <= 1 || !env.NVIDIA_API_KEY || !model) {
     return { chunks: chunks.slice(0, topK), reranked: false };
   }
 
-  const model = env.NVIDIA_RERANK_MODEL || DEFAULT_RERANK_MODEL;
   const endpoint = `https://ai.api.nvidia.com/v1/retrieval/${model}/reranking`;
 
   try {
@@ -118,7 +119,7 @@ export async function rerankChunks(
         passages: chunks.map((c) => ({ text: `${c.title}\n${c.text}`.slice(0, 1500) })),
         truncate: 'END',
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(3_500),
     });
 
     if (!res.ok) {
@@ -215,22 +216,33 @@ export async function generateChatCompletion(
   let lastErr: NvidiaApiError | null = null;
 
   for (const model of candidates) {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.25,
-        top_p: 0.9,
-        max_tokens: 1024,
-        stream: false,
-      }),
-      signal: AbortSignal.timeout(45_000),
-    });
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(new Error(`Timeout after 12s [${model}]`)), 12_000);
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.25,
+          top_p: 0.9,
+          max_tokens: 2048,
+          stream: false,
+        }),
+        signal: ac.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const msg = err instanceof Error ? err.message : 'Request timed out';
+      lastErr = new NvidiaApiError(`NVIDIA Chat API error [${model}]: ${msg}`, 504);
+      continue;
+    }
+    clearTimeout(timer);
 
     if (res.ok) {
       const data = (await res.json()) as {
@@ -238,7 +250,7 @@ export async function generateChatCompletion(
       };
       const content = data.choices?.[0]?.message?.content?.trim();
       if (content) return { content, model };
-      lastErr = new NvidiaApiError('Empty completion from NVIDIA Chat API', 502);
+      lastErr = new NvidiaApiError(`Empty completion from NVIDIA Chat API [${model}]`, 502);
       continue;
     }
 
@@ -270,22 +282,33 @@ export async function streamChatCompletion(
   let lastErr: NvidiaApiError | null = null;
 
   for (const model of candidates) {
-    const attempt = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.25,
-        top_p: 0.9,
-        max_tokens: 1024,
-        stream: true,
-      }),
-      signal: AbortSignal.timeout(50_000),
-    });
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(new Error(`Timeout after 12s [${model}]`)), 12_000);
+    let attempt: Response;
+    try {
+      attempt = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.25,
+          top_p: 0.9,
+          max_tokens: 2048,
+          stream: true,
+        }),
+        signal: ac.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      const msg = err instanceof Error ? err.message : 'Request timed out';
+      lastErr = new NvidiaApiError(`NVIDIA Chat Stream error [${model}]: ${msg}`, 504);
+      continue;
+    }
+    clearTimeout(timer);
 
     if (attempt.ok && attempt.body) {
       res = attempt;

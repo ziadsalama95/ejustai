@@ -195,7 +195,15 @@ export default {
                   sendEvent({ token: value });
                 }
 
-                sendEvent({ done: true, answer: fullAnswer, sources, lang, model, retrieval_mode: mode });
+                let finalModel = model;
+                if (!fullAnswer.trim()) {
+                  const fallback = await generateChatCompletion(messages, env);
+                  fullAnswer = fallback.content;
+                  finalModel = fallback.model;
+                  sendEvent({ token: fullAnswer });
+                }
+
+                sendEvent({ done: true, answer: fullAnswer, sources, lang, model: finalModel, retrieval_mode: mode });
 
                 const postTasks = Promise.all([
                   appendHistory(env, sessionId, question, fullAnswer, sources),
@@ -204,7 +212,7 @@ export default {
                     question,
                     rewrittenQuery: searchQuery,
                     answer: fullAnswer,
-                    model,
+                    model: finalModel,
                     lang,
                     faculty,
                     retrievalMode: mode,

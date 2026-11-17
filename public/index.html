@@ -71,7 +71,7 @@ header {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
-  z-index: 20;
+  z-index: 35;
 }
 
 .brand {
@@ -272,8 +272,12 @@ header {
 .sidebar-backdrop {
   display: none;
   position: fixed;
-  inset: 0;
+  top: 58px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(2px);
   z-index: 25;
 }
 
@@ -310,6 +314,7 @@ header {
 .scroll {
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scroll-behavior: smooth;
   padding: 28px 20px 20px;
 }
@@ -382,7 +387,7 @@ header {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-sm);
@@ -398,8 +403,22 @@ header {
 .prompt-card:hover {
   border-color: #93c5fd;
   background: var(--brand-soft);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+}
+
+.prompt-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prompt-cat {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+  letter-spacing: 0.02em;
 }
 
 .prompt-card:active { transform: scale(0.99); }
@@ -901,17 +920,27 @@ header {
 }
 
 @media (max-width: 640px) {
-  header { padding: 0 14px; height: 54px; }
+  header { padding: 0 12px; height: 54px; }
   .sidebar { top: 54px; }
-  .status-badge { display: none; }
-  .scroll { padding: 18px 12px 14px; }
-  .welcome { padding: 20px 4px 10px; }
-  .welcome-sub { font-size: 13.5px; margin-bottom: 22px; }
-  .prompt-grid { grid-template-columns: 1fr; }
-  .msg-body { max-width: 88%; }
-  .msg.user .msg-body { max-width: 85%; }
+  .sidebar-backdrop { top: 54px; }
+  .btn-icon, .btn-new { min-height: 38px; }
+  .status-badge { padding: 5px 8px; }
+  #statusLabel { display: none; }
+  .scroll { padding: 16px 12px 12px; }
+  .welcome { padding: 16px 4px 8px; }
+  .welcome-logo { width: 54px; height: 54px; border-radius: 14px; margin-bottom: 14px; }
+  .welcome-sub { font-size: 13.5px; margin-bottom: 20px; }
+  .prompt-grid { grid-template-columns: 1fr; gap: 8px; }
+  .prompt-card { padding: 13px 14px; }
+  .msg-body { max-width: 90%; }
+  .msg.user .msg-body { max-width: 86%; }
+  .bubble { padding: 11px 14px; font-size: 14.5px; }
   .suggestions { margin-left: 0; }
   .input-dock { padding: 8px 12px calc(12px + env(safe-area-inset-bottom)); }
+  .input-box { padding: 8px 8px 8px 14px; border-radius: 14px; }
+  .ta { font-size: 16px; }
+  .btn-send { width: 38px; height: 38px; }
+  .disclaimer { font-size: 11px; }
   #toasts { left: 12px; right: 12px; max-width: none; }
 }
 </style>
@@ -1004,12 +1033,12 @@ header {
 
 <script>
 const PROMPTS = [
-  { icon: '🎓', text: 'What academic programs does E-JUST offer?' },
-  { icon: '📋', text: 'What are the undergraduate admission requirements?' },
-  { icon: '💰', text: 'Tell me about tuition fees and scholarships' },
-  { icon: '🔬', text: 'What research centers and labs are at E-JUST?' },
-  { icon: '📍', text: 'Where is E-JUST located and is housing available?' },
-  { icon: '💻', text: 'Tell me about the Faculty of CSIT and AI programs' },
+  { icon: '🎓', cat: 'Academics', text: 'What academic programs does E-JUST offer?' },
+  { icon: '📋', cat: 'Admissions', text: 'What are the undergraduate admission requirements?' },
+  { icon: '💰', cat: 'Financial Aid', text: 'Tell me about tuition fees and scholarships' },
+  { icon: '🔬', cat: 'Research', text: 'What research centers and labs are at E-JUST?' },
+  { icon: '📍', cat: 'Campus Life', text: 'Where is E-JUST located and is housing available?' },
+  { icon: '💻', cat: 'CSIT & AI', text: 'Tell me about the Faculty of CSIT and AI programs' },
 ];
 
 const API = window.location.origin;
@@ -1193,12 +1222,15 @@ function toast(msg, type = 'info') {
 function renderPromptGrid() {
   const grid = document.getElementById('promptGrid');
   grid.innerHTML = '';
-  PROMPTS.forEach(({ icon, text }) => {
+  PROMPTS.forEach(({ icon, cat, text }) => {
     const btn = mk('button', 'prompt-card');
     btn.innerHTML = `
       <span class="prompt-card-left">
         <span class="prompt-icon">${icon}</span>
-        <span class="prompt-text">${esc(text)}</span>
+        <span class="prompt-card-meta">
+          <span class="prompt-cat">${esc(cat)}</span>
+          <span class="prompt-text">${esc(text)}</span>
+        </span>
       </span>
       <svg class="prompt-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="9 18 15 12 9 6"/>
@@ -1319,6 +1351,10 @@ function createStreamingBubble(bLang) {
     },
     finalize(raw, sources, lang, originalQuestion) {
       kill(msg);
+      if (!raw || !raw.trim()) {
+        renderErrorBubble(originalQuestion);
+        return;
+      }
       renderBubble('ai', raw, sources, lang, originalQuestion);
     },
   };
@@ -1529,6 +1565,13 @@ function newChat(silent) {
   if (!silent) toast('Started a new chat', 'ok');
   ta.focus();
 }
+
+window.addEventListener('resize', () => {
+  if (window.innerWidth <= 768) {
+    document.getElementById('sidebar').classList.add('collapsed');
+    document.getElementById('sidebarBackdrop').classList.remove('show');
+  }
+});
 
 window.addEventListener('DOMContentLoaded', async () => {
   if (window.innerWidth <= 768) {
