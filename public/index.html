@@ -537,17 +537,30 @@ header {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 17px;
+  max-width: 0;
   height: 17px;
-  padding: 0 4px;
-  margin: 0 1px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: scale(0.75);
   border-radius: 5px;
   font-size: 10.5px;
   font-weight: 600;
   color: var(--brand);
   background: var(--brand-soft);
-  border: 1px solid #bfdbfe;
+  border: 0 solid #bfdbfe;
   vertical-align: 1px;
+  transition: all 0.24s var(--ease);
+}
+
+.msg-body.sources-open .cite-badge {
+  max-width: 30px;
+  padding: 0 5px;
+  margin: 0 2px;
+  opacity: 1;
+  transform: scale(1);
+  border-width: 1px;
 }
 .bubble a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
 .bubble a:hover { color: var(--brand-hi); }
@@ -599,35 +612,137 @@ header {
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
-/* Sources */
-.sources {
+/* Expandable References */
+.refs-wrap {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 6px;
 }
 
-.src-chip {
+.refs-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 5px 11px;
   border-radius: 999px;
-  font-size: 11.5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--tx-2);
+  font-family: var(--font);
+  font-size: 12px;
   font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s var(--ease);
+}
+
+.refs-toggle:hover {
+  background: var(--brand-soft);
+  border-color: #bfdbfe;
+  color: var(--brand-hi);
+}
+
+.msg-body.sources-open .refs-toggle {
+  background: var(--brand-soft);
+  border-color: #93c5fd;
+  color: var(--brand-hi);
+}
+
+.refs-chev {
+  transition: transform 0.26s var(--ease);
+}
+
+.msg-body.sources-open .refs-chev {
+  transform: rotate(180deg);
+}
+
+.refs-collapse {
+  width: 100%;
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.3s var(--ease), opacity 0.24s var(--ease);
+}
+
+.msg-body.sources-open .refs-collapse {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.refs-inner {
+  overflow: hidden;
+}
+
+.refs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 2px;
+}
+
+.ref-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--tx);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.18s var(--ease);
+}
+
+.ref-item:hover {
+  border-color: #93c5fd;
+  background: var(--brand-soft);
+  transform: translateX(2px);
+}
+
+.ref-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--brand);
   background: var(--brand-soft);
   border: 1px solid #bfdbfe;
-  text-decoration: none;
-  max-width: 260px;
+}
+
+.ref-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ref-title {
+  font-size: 12.5px;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: all 0.16s var(--ease);
 }
 
-.src-chip:hover {
-  background: #dbeafe;
-  border-color: #93c5fd;
+.ref-url {
+  font-size: 11px;
+  color: var(--tx-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ref-ext {
+  color: var(--tx-3);
+  flex-shrink: 0;
 }
 
 /* Message Footer */
@@ -1279,6 +1394,7 @@ function inlineMd(text) {
   s = s.replace(/\*([^*\n]+?)\*/g, '<em>$1</em>');
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   s = s.replace(/(?<![="'])(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  s = s.replace(/,\s*(?=\[\d+\])/g, '');
   s = s.replace(/\[(\d+)\]/g, '<span class="cite-badge">$1</span>');
   return s;
 }
@@ -1490,15 +1606,47 @@ function renderBubble(role, raw, sources, bLang, originalQuestion, skipSaveFlag)
   body.appendChild(bub);
 
   if (isAI && sources && sources.length) {
-    const srcs = mk('div', 'sources');
+    const wrap = mk('div', 'refs-wrap');
+    const toggle = mk('button', 'refs-toggle');
+    toggle.type = 'button';
+    toggle.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>
+      <span>References (${sources.length})</span>
+      <svg class="refs-chev" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>`;
+    toggle.onclick = () => {
+      body.classList.toggle('sources-open');
+    };
+
+    const collapse = mk('div', 'refs-collapse');
+    const inner = mk('div', 'refs-inner');
+    const list = mk('div', 'refs-list');
+
     sources.forEach((s, idx) => {
-      const a = mk('a', 'src-chip');
-      a.href = s.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-      a.title = s.title || s.url;
-      a.textContent = `[${idx + 1}] ${s.title || s.url}`;
-      srcs.appendChild(a);
+      const item = mk('a', 'ref-item');
+      item.href = s.url;
+      item.target = '_blank';
+      item.rel = 'noopener noreferrer';
+      item.innerHTML = `
+        <span class="ref-num">${idx + 1}</span>
+        <span class="ref-meta">
+          <span class="ref-title">${esc(s.title || s.url)}</span>
+          <span class="ref-url">${esc(s.url)}</span>
+        </span>
+        <svg class="ref-ext" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>`;
+      list.appendChild(item);
     });
-    body.appendChild(srcs);
+
+    inner.appendChild(list);
+    collapse.appendChild(inner);
+    wrap.appendChild(toggle);
+    wrap.appendChild(collapse);
+    body.appendChild(wrap);
   }
 
   const footer = mk('div', 'msg-footer');
