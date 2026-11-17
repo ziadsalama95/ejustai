@@ -109,37 +109,6 @@ header {
   gap: 10px;
 }
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--tx-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-}
-
-.status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--tx-3);
-}
-
-.status-badge.live {
-  color: #065f46;
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-}
-
-.status-badge.live .status-dot {
-  background: var(--green);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
-}
-
 .btn-new {
   display: inline-flex;
   align-items: center;
@@ -955,8 +924,6 @@ header {
   .sidebar { top: 54px; }
   .sidebar-backdrop { top: 54px; }
   .btn-icon, .btn-new { min-height: 38px; }
-  .status-badge { padding: 5px 8px; }
-  #statusLabel { display: none; }
   .scroll { padding: 16px 12px 12px; }
   .welcome { padding: 16px 4px 8px; }
   .welcome-logo { width: 54px; height: 54px; border-radius: 14px; margin-bottom: 14px; }
@@ -997,10 +964,6 @@ header {
   </div>
 
   <div class="hdr-right">
-    <div class="status-badge" id="statusBadge">
-      <span class="status-dot"></span>
-      <span id="statusLabel">Connecting</span>
-    </div>
     <button class="btn-new" onclick="newChat()" aria-label="New chat">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 5v14M5 12h14"/>
@@ -1064,12 +1027,12 @@ header {
 
 <script>
 const PROMPTS = [
-  { icon: '🎓', cat: 'Academics', text: 'What academic programs does E-JUST offer?' },
-  { icon: '📋', cat: 'Admissions', text: 'What are the undergraduate admission requirements?' },
-  { icon: '💰', cat: 'Financial Aid', text: 'Tell me about tuition fees and scholarships' },
-  { icon: '🔬', cat: 'Research', text: 'What research centers and labs are at E-JUST?' },
-  { icon: '📍', cat: 'Campus Life', text: 'Where is E-JUST located and is housing available?' },
-  { icon: '💻', cat: 'CSIT & AI', text: 'Tell me about the Faculty of CSIT and AI programs' },
+  { cat: 'Academics', text: 'What academic programs does E-JUST offer?' },
+  { cat: 'Admissions', text: 'What are the undergraduate admission requirements?' },
+  { cat: 'Financial Aid', text: 'Tell me about tuition fees and scholarships' },
+  { cat: 'Research', text: 'What research centers and labs are at E-JUST?' },
+  { cat: 'Campus Life', text: 'Where is E-JUST located and is housing available?' },
+  { cat: 'CSIT', text: 'Tell me about the Faculty of CSIT and AI programs' },
 ];
 
 const API = window.location.origin;
@@ -1253,15 +1216,12 @@ function toast(msg, type = 'info') {
 function renderPromptGrid() {
   const grid = document.getElementById('promptGrid');
   grid.innerHTML = '';
-  PROMPTS.forEach(({ icon, cat, text }) => {
+  PROMPTS.forEach(({ cat, text }) => {
     const btn = mk('button', 'prompt-card');
     btn.innerHTML = `
-      <span class="prompt-card-left">
-        <span class="prompt-icon">${icon}</span>
-        <span class="prompt-card-meta">
-          <span class="prompt-cat">${esc(cat)}</span>
-          <span class="prompt-text">${esc(text)}</span>
-        </span>
+      <span class="prompt-card-meta">
+        <span class="prompt-cat">${esc(cat)}</span>
+        <span class="prompt-text">${esc(text)}</span>
       </span>
       <svg class="prompt-arrow" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="9 18 15 12 9 6"/>
@@ -1726,8 +1686,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (!r.ok) throw new Error();
     const h = await r.json();
     live = true;
-    document.getElementById('statusBadge').className = 'status-badge live';
-    document.getElementById('statusLabel').textContent = 'Online';
     ta.disabled = false;
 
     if (sessionMsgs.length) {
@@ -1739,7 +1697,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     ta.focus();
   } catch {
-    document.getElementById('statusLabel').textContent = 'Offline';
     toast('Could not connect to assistant API', 'err');
   }
 });
