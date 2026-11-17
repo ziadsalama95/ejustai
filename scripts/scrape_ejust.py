@@ -72,6 +72,8 @@ SKIP_PATTERNS = [
 
 def normalize_url(url: str) -> str:
     url, _ = urldefrag(url.strip())
+    # Some pages contain malformed hrefs like "/https://library.ejust.edu.eg"
+    url = re.sub(r"^(https?://[^/]+)?/(https?://)", r"\2", url)
     parsed = urlparse(url)
     netloc = parsed.netloc.lower()
     if netloc == "ejust.edu.eg":
@@ -312,7 +314,9 @@ def main() -> None:
             log.warning("Fetch failed %s: %s", url, exc)
             continue
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        # Parse raw bytes so BeautifulSoup honours the page's own <meta charset>.
+        # (resp.text falls back to ISO-8859-1 and garbles Arabic pages.)
+        soup = BeautifulSoup(resp.content, "lxml")
 
         # Discover links & PDFs before decomposing nav/footer
         for a in soup.find_all("a", href=True):
