@@ -23,7 +23,7 @@
 	"vars": {
 		"NVIDIA_BASE_URL": "https://integrate.api.nvidia.com/v1",
 		"NVIDIA_CHAT_MODEL": "nvidia/nemotron-3.5-bolt-e4b",
-		"NVIDIA_EMBED_MODEL": "snowflake/arctic-embed-l",
+		"NVIDIA_EMBED_MODEL": "nvidia/embed-qa-4",
 		"RAG_TOP_K": "5",
 		"RAG_MIN_SCORE": "0.22"
 	},

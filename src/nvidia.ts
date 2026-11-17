@@ -8,7 +8,12 @@ const CHAT_FALLBACK_MODELS = [
   'minimaxai/minimax-m3.1-flash',
   'google/gemma-3-12b-it',
 ];
-const DEFAULT_EMBED_MODEL = 'snowflake/arctic-embed-l';
+const DEFAULT_EMBED_MODEL = 'nvidia/embed-qa-4';
+const EMBED_FALLBACK_MODELS = [
+  'nvidia/nemotron-3.5-embed-1b',
+  'nvidia/nemotron-3-embed-1b',
+  'nvidia/llama-3.2-nv-embedqa-1b-v1',
+];
 
 export class NvidiaApiError extends Error {
   constructor(
@@ -37,7 +42,7 @@ function requireApiKey(env: Pick<Env, 'NVIDIA_API_KEY'>): string {
 
 function usesAsymmetricInputType(model: string): boolean {
   const lower = model.toLowerCase();
-  return lower.includes('nv-embed') || lower.includes('e5') || lower.includes('qa');
+  return lower.includes('nv-embed') || lower.includes('e5') || lower.includes('qa') || lower.includes('nemotron');
 }
 
 export async function embedTexts(
@@ -47,49 +52,64 @@ export async function embedTexts(
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
   const apiKey = requireApiKey(env);
-  const model = env.NVIDIA_EMBED_MODEL || DEFAULT_EMBED_MODEL;
+  const primary = env.NVIDIA_EMBED_MODEL?.trim() || DEFAULT_EMBED_MODEL;
+  const candidates = Array.from(new Set([primary, ...EMBED_FALLBACK_MODELS]));
   const baseUrl = getBaseUrl(env);
+  let lastErr: NvidiaApiError | null = null;
 
-  const payload: Record<string, unknown> = {
-    model,
-    input: texts,
-    encoding_format: 'float',
-    truncate: 'END',
-  };
+  for (const model of candidates) {
+    const payload: Record<string, unknown> = {
+      model,
+      input: texts,
+      encoding_format: 'float',
+      truncate: 'END',
+    };
 
-  if (usesAsymmetricInputType(model)) {
-    payload.input_type = inputType;
-  }
+    if (usesAsymmetricInputType(model)) {
+      payload.input_type = inputType;
+    }
 
-  const res = await fetch(`${baseUrl}/embeddings`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(10_000),
-  });
+    const res = await fetch(`${baseUrl}/embeddings`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const data = (await res.json()) as {
+        data?: Array<{ embedding: number[]; index: number }>;
+      };
+      if (!data.data || !Array.isArray(data.data)) {
+        lastErr = new NvidiaApiError(`Invalid response from NVIDIA Embeddings API [${model}]`, 502);
+        continue;
+      }
+      return data.data
+        .sort((a, b) => a.index - b.index)
+        .map((item) => {
+          // Ensure 1024-dim output for Vectorize (Matryoshka slice + L2 norm if > 1024)
+          if (item.embedding.length <= 1024) return item.embedding;
+          const sliced = item.embedding.slice(0, 1024);
+          const norm = Math.sqrt(sliced.reduce((acc, v) => acc + v * v, 0)) || 1;
+          return sliced.map((v) => v / norm);
+        });
+    }
+
     const errBody = await res.text().catch(() => '');
-    throw new NvidiaApiError(
-      `NVIDIA Embeddings API error (${res.status}): ${errBody.slice(0, 200)}`,
+    lastErr = new NvidiaApiError(
+      `NVIDIA Embeddings API error (${res.status}) [${model}]: ${errBody.slice(0, 200)}`,
       res.status === 401 ? 502 : res.status,
     );
+    if (res.status === 401) throw lastErr;
+    if (![400, 404, 410, 429, 500, 502, 503, 504].includes(res.status)) {
+      throw lastErr;
+    }
   }
 
-  const data = (await res.json()) as {
-    data?: Array<{ embedding: number[]; index: number }>;
-  };
-
-  if (!data.data || !Array.isArray(data.data)) {
-    throw new NvidiaApiError('Invalid response from NVIDIA Embeddings API', 502);
-  }
-
-  return data.data
-    .sort((a, b) => a.index - b.index)
-    .map((item) => item.embedding);
+  throw lastErr ?? new NvidiaApiError('All NVIDIA embedding models failed', 502);
 }
 
 export async function rerankChunks(
