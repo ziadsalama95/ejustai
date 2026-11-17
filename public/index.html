@@ -1114,7 +1114,6 @@ header {
   </div>
 
   <div class="hdr-right">
-    <button class="btn-new" id="btnLang" onclick="toggleUiLang()" aria-label="Switch language">العربية</button>
     <button class="btn-new" onclick="newChat()" aria-label="New chat">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M12 5v14M5 12h14"/>
@@ -1231,12 +1230,11 @@ const UI_TEXT = {
 const API = window.location.origin;
 const CHATS_KEY = 'ejust_chats_v1';
 const ACTIVE_SID_KEY = 'ejust_active_sid';
-const UI_LANG_KEY = 'ejust_ui_lang';
 
 let live = false;
 let busy = false;
-let uiLang = localStorage.getItem(UI_LANG_KEY) || 'en';
-let respLang = uiLang;
+let uiLang = 'en';
+let respLang = 'en';
 let chats = loadAllChats();
 let sid = localStorage.getItem(ACTIVE_SID_KEY) || createChatId();
 let sessionMsgs = getActiveChat()?.messages.slice() || [];
@@ -1287,29 +1285,6 @@ function upsertActiveChat(titleOverride) {
   }
   persistAllChats();
   renderSidebar();
-}
-
-function applyUiLang(lang) {
-  uiLang = lang === 'ar' ? 'ar' : 'en';
-  localStorage.setItem(UI_LANG_KEY, uiLang);
-  const t = UI_TEXT[uiLang];
-  document.documentElement.lang = uiLang;
-  document.getElementById('btnLang').textContent = t.langBtn;
-  document.getElementById('newChatLabel').textContent = t.newChat;
-  document.getElementById('recentChatsLabel').textContent = t.recentChats;
-  document.getElementById('welcomeTitle').textContent = t.welcomeTitle;
-  document.getElementById('welcomeSub').textContent = t.welcomeSub;
-  document.getElementById('disclaimerText').textContent = t.disclaimer;
-  ta.placeholder = t.placeholder;
-  const welcomeEl = document.getElementById('welcome');
-  welcomeEl.setAttribute('dir', uiLang === 'ar' ? 'rtl' : 'ltr');
-  welcomeEl.style.fontFamily = uiLang === 'ar' ? 'var(--font-ar)' : '';
-  renderPromptGrid();
-  renderSidebar();
-}
-
-function toggleUiLang() {
-  applyUiLang(uiLang === 'en' ? 'ar' : 'en');
 }
 
 function renderSidebar() {
@@ -1941,7 +1916,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (window.innerWidth <= 768) {
     document.getElementById('sidebar').classList.add('collapsed');
   }
-  applyUiLang(uiLang);
+  renderPromptGrid();
+  renderSidebar();
   try {
     const r = await fetch(`${API}/health`, { signal: AbortSignal.timeout(6000) });
     if (!r.ok) throw new Error();
