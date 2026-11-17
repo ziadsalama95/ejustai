@@ -161,10 +161,15 @@ async function main() {
       stdio: 'inherit',
     });
 
-    console.log(`Upserting vectors to Cloudflare Vectorize (${INDEX_NAME})...`);
-    execSync(`npx wrangler vectorize upsert ${INDEX_NAME} --file="${NDJSON_OUT}"`, {
-      stdio: 'inherit',
-    });
+    console.log(`Upserting ${ndjsonLines.length} vectors to Cloudflare Vectorize (${INDEX_NAME})...`);
+    const upsertBatchSize = 500;
+    for (let i = 0; i < ndjsonLines.length; i += upsertBatchSize) {
+      const partPath = join(ROOT, `vectors.part.${Math.floor(i / upsertBatchSize)}.ndjson`);
+      writeFileSync(partPath, ndjsonLines.slice(i, i + upsertBatchSize).join('\n') + '\n', 'utf-8');
+      execSync(`npx wrangler vectorize upsert ${INDEX_NAME} --file="${partPath}"`, {
+        stdio: 'inherit',
+      });
+    }
   } else {
     console.log('To upload to Cloudflare D1 & Vectorize, run: npm run ingest:remote');
   }
